@@ -102,6 +102,13 @@ describe('elicitation schema round-trip', () => {
     assert.equal(schema.properties?.['confirm']?.['default'], false);
   });
 
+  it('ask_confirm without a default advertises no default and no "Default:" hint', () => {
+    const request = buildFormRequest({ kind: 'confirm', question: 'Deploy to production now?' }, 'array');
+    roundTrip({ kind: 'confirm', question: 'Deploy to production now?' });
+    assert.doesNotMatch(request.message, /Default:/);
+    assert.equal((request.requestedSchema as unknown as LooseSchema).properties?.['confirm']?.['default'], undefined);
+  });
+
   it('ask_text survives the SDK parser as a string field', () => {
     const schema = roundTrip(TEXT);
     assert.deepStrictEqual(schema.required, ['text']);

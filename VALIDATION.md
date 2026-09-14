@@ -105,3 +105,59 @@ Get-FileHash -Algorithm SHA256 plugins/codex-human-input-mcp/**/*
 - **`ask_confirm`（boolean 字段）在 Codex 中的渲染**。理论上渲染成是/否控件，未实测。
 - **`install.py` 的端到端流程**。脚本结构对齐已验证的 `codex-turn-meter-package`，
   但本仓库尚未在干净机器上跑过完整安装。
+
+---
+
+## 第二轮验证（2026-09-14，修复后回归）
+
+本轮改动：elicitation 能力预检对齐 SDK 门（truthy `elicitation`）、修正 `no_capability`
+归类正则（SDK 实际文本为 "does not support elicitation"）、confirm 无默认值时不再伪造
+"Default: no"、HTTP 兜底表单为 choice/confirm/多选加 `required` 防空提交、`install.py`
+增加手工注册冲突检测与 `--migrate`。
+
+### 1. 类型检查 + 全量测试 + 冒烟
+
+```powershell
+npm run verify    # typecheck + tsc build + esbuild + 44 tests + plugin smoke
+```
+
+```
+ℹ tests 44
+ℹ pass 44
+ℹ fail 0
+smoke test OK
+```
+
+新增 3 个测试：confirm 无默认值不产出 `default` 键与 "Default:" 文案（含 SDK 往返）、
+旧式 `elicitation: {}` 客户端在 `human_input_status` 中报告为支持、旧式客户端的
+`ask_choice` 经 elicitation 正常回答。既有 confirm 测试改为断言表单含
+`name="confirm" value="true" required`；多选（min=1）断言 checkbox 带 `required`。
+
+### 2. SDK 能力门核对（决定修复方案的依据）
+
+核对 `@modelcontextprotocol/sdk@1.30.0` 源码：
+
+- `server/index.js` `assertCapabilityForMethod('elicitation/create')` 只要求
+  `_clientCapabilities?.elicitation` 为真，**不检查 `.form`**；
+- `types.js` 的 `ElicitationCapabilitySchema` 带 `z.preprocess`，把裸 `elicitation: {}`
+  归一化为 `{ form: {} }`，且该解析发生在 initialize 消息解析层
+  （`server/index.js:261` 存储的是已解析的 params）。
+
+结论：旧式声明在真实链路上本就被 SDK 归一化兼容；我们的预检改为与 SDK 相同的门是
+防御性对齐，覆盖奇异 capability 形状，无行为回退风险。
+
+### 3. install.py 迁移逻辑单元验证
+
+`python -m py_compile install.py` 通过；以临时 `config.toml` 驱动：
+
+- `[mcp_servers.human_input]` + 其 `.env` 子表被完整定位并注释，前后无关表
+  （`[something_else]`、`[other_table]`）原样保留；
+- 二次执行幂等（识别已迁移标记，不再改动）；
+- 无该段的配置文件原样不动；
+- 存在手工 server 且未加 `--migrate` 时按预期 `SystemExit` 拒绝安装。
+
+### 4. 回归未覆盖
+
+- 本轮改动后的**真实 Codex Desktop 弹窗回归**未重跑（第 5 节的端到端结论仍基于上一轮）；
+  弹窗路径的代码（`forms.ts` 消息文本、`elicitation.ts` 预检）已由新增单测覆盖，
+  但表单在 Codex UI 中的实际渲染建议在下一轮实测时复核。

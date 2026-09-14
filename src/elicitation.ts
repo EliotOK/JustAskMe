@@ -9,11 +9,15 @@
  *
  * Two behaviours in that implementation drive the whole design here:
  *
- *   1. If the client did not declare `capabilities.elicitation.form`, the SDK
- *      **throws** `Error('Client does not support form elicitation.')` before
- *      sending anything. We pre-check the capability anyway, and additionally
- *      classify that exact throw, so a stale/skewed SDK cannot turn into an
- *      unhandled crash.
+ *   1. If the client did not declare an `elicitation` capability at all, the SDK
+ *      **throws** `Error('Client does not support elicitation (required for
+ *      elicitation/create)')` before sending anything. We pre-check the
+ *      capability anyway, and additionally classify that exact throw, so a
+ *      stale/skewed SDK cannot turn into an unhandled crash. Note the SDK's own
+ *      gate is a *truthy* `elicitation` object — not `elicitation.form` — and
+ *      its capability parser normalizes a legacy bare `elicitation: {}` into
+ *      `{ form: {} }` during initialize, so we mirror the SDK's gate here
+ *      instead of requiring `.form` ourselves.
  *   2. `RequestOptions.timeout` defaults to `DEFAULT_REQUEST_TIMEOUT_MSEC`
  *      (60_000). A human reading a question can easily take longer, so we
  *      always pass an explicit timeout.
@@ -30,11 +34,15 @@ import type { FormRequest } from './forms.js';
 import { log } from './logger.js';
 import type { ElicitationFailure, ElicitationOutcome } from './outcome.js';
 
-/** True when the connected client advertised MCP form elicitation. */
+/** True when the connected client declared an MCP elicitation capability. */
 export function clientSupportsFormElicitation(server: McpServer): boolean {
   try {
     const capabilities = server.server.getClientCapabilities();
-    return Boolean(capabilities?.elicitation?.form);
+    // Same gate as the SDK's assertCapabilityForMethod: any truthy elicitation
+    // object. Requiring `.form` would diverge from the SDK and could route
+    // clients with exotic/legacy capability shapes to the fallback even though
+    // `elicitInput` would serve them.
+    return Boolean(capabilities?.elicitation);
   } catch (error) {
     log.debug('capability probe failed:', error);
     return false;
@@ -62,7 +70,7 @@ export function classifyElicitationError(
     if (error.code === ErrorCode.RequestTimeout) return { reason: 'timeout', detail };
     if (error.code === ErrorCode.InvalidParams) return { reason: 'invalid_response', detail };
   }
-  if (/does not support form elicitation/i.test(detail)) return { reason: 'no_capability', detail };
+  if (/does not support elicitation/i.test(detail)) return { reason: 'no_capability', detail };
   if (error instanceof Error && error.name === 'AbortError') return { reason: 'aborted', detail };
   return { reason: 'transport_error', detail };
 }
@@ -82,7 +90,7 @@ export async function requestFormInput(
     return {
       ok: false,
       reason: 'no_capability',
-      detail: 'client did not declare capabilities.elicitation.form'
+      detail: 'client did not declare an elicitation capability'
     };
   }
 

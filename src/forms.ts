@@ -101,19 +101,24 @@ export function buildFormRequest(question: FormQuestion, multiSelectMode: MultiS
     }
 
     case 'confirm': {
-      const fallback = question.defaultValue ?? false;
+      // Only advertise a default when the caller actually set one; a fabricated
+      // "Default: no" would nudge the user on questions they were never told
+      // have a default.
+      const lines = [question.question, 'Answer yes or no.'];
+      const confirmProperty: Record<string, unknown> = {
+        type: 'boolean',
+        title: question.question,
+        description: 'Set to true to confirm, false to decline.'
+      };
+      if (question.defaultValue !== undefined) {
+        confirmProperty['default'] = question.defaultValue;
+        lines.push(`Default: ${question.defaultValue ? 'yes' : 'no'}`);
+      }
       return {
-        message: `${question.question}\n\nAnswer yes or no. Default: ${fallback ? 'yes' : 'no'}`,
+        message: lines.join('\n'),
         requestedSchema: asRequestedSchema({
           type: 'object',
-          properties: {
-            confirm: {
-              type: 'boolean',
-              title: question.question,
-              description: 'Set to true to confirm, false to decline.',
-              default: fallback
-            }
-          },
+          properties: { confirm: confirmProperty },
           required: ['confirm']
         })
       };

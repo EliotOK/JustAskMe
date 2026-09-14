@@ -584,7 +584,7 @@ export function registerTools(server: McpServer, config: ServerConfig): void {
       const report: Record<string, unknown> = {
         server: SERVER_NAME,
         version: SERVER_VERSION,
-        client_supports_form_elicitation: Boolean(capabilities?.elicitation?.form),
+        client_supports_form_elicitation: Boolean(capabilities?.elicitation),
         client_supports_url_elicitation: Boolean(capabilities?.elicitation?.url),
         client_version: server.server.getClientVersion() ?? null,
         fallback_mode: config.fallback,

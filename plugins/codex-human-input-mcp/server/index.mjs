@@ -36582,7 +36582,7 @@ function resolveConfig(overrides = {}, env = process.env) {
 function clientSupportsFormElicitation(server) {
   try {
     const capabilities = server.server.getClientCapabilities();
-    return Boolean(capabilities?.elicitation?.form);
+    return Boolean(capabilities?.elicitation);
   } catch (error62) {
     log.debug("capability probe failed:", error62);
     return false;
@@ -36597,7 +36597,7 @@ function classifyElicitationError(error62, ownSignal) {
     if (error62.code === ErrorCode.RequestTimeout) return { reason: "timeout", detail };
     if (error62.code === ErrorCode.InvalidParams) return { reason: "invalid_response", detail };
   }
-  if (/does not support form elicitation/i.test(detail)) return { reason: "no_capability", detail };
+  if (/does not support elicitation/i.test(detail)) return { reason: "no_capability", detail };
   if (error62 instanceof Error && error62.name === "AbortError") return { reason: "aborted", detail };
   return { reason: "transport_error", detail };
 }
@@ -36606,7 +36606,7 @@ async function requestFormInput(server, request, options) {
     return {
       ok: false,
       reason: "no_capability",
-      detail: "client did not declare capabilities.elicitation.form"
+      detail: "client did not declare an elicitation capability"
     };
   }
   const started = Date.now();
@@ -36691,21 +36691,21 @@ function buildFormRequest(question, multiSelectMode) {
       };
     }
     case "confirm": {
-      const fallback = question.defaultValue ?? false;
+      const lines = [question.question, "Answer yes or no."];
+      const confirmProperty = {
+        type: "boolean",
+        title: question.question,
+        description: "Set to true to confirm, false to decline."
+      };
+      if (question.defaultValue !== void 0) {
+        confirmProperty["default"] = question.defaultValue;
+        lines.push(`Default: ${question.defaultValue ? "yes" : "no"}`);
+      }
       return {
-        message: `${question.question}
-
-Answer yes or no. Default: ${fallback ? "yes" : "no"}`,
+        message: lines.join("\n"),
         requestedSchema: asRequestedSchema({
           type: "object",
-          properties: {
-            confirm: {
-              type: "boolean",
-              title: question.question,
-              description: "Set to true to confirm, false to decline.",
-              default: fallback
-            }
-          },
+          properties: { confirm: confirmProperty },
           required: ["confirm"]
         })
       };
@@ -36864,12 +36864,13 @@ function safeEqual(a, b) {
   if (left.length !== right.length) return false;
   return timingSafeEqual(left, right);
 }
-function optionRows(options, inputType, name) {
+function optionRows(options, inputType, name, required2) {
   return options.map((option, index) => {
     const id = `${name}_${index}`;
     const description = option.description ? `<span class="desc">${escapeHtml(option.description)}</span>` : "";
+    const requiredAttr = required2 ? " required" : "";
     return `<label class="opt" for="${id}">
-  <input type="${inputType}" id="${id}" name="${escapeHtml(name)}" value="${escapeHtml(option.label)}">
+  <input type="${inputType}" id="${id}" name="${escapeHtml(name)}" value="${escapeHtml(option.label)}"${requiredAttr}>
   <span class="label">${escapeHtml(option.label)}</span>${description}
 </label>`;
   }).join("\n");
@@ -36882,7 +36883,7 @@ function buildBody(question, multiSelectMode) {
 </label>` : "";
       return `<fieldset>
   <legend>Choose one</legend>
-  ${optionRows(question.options, "radio", "choice")}
+  ${optionRows(question.options, "radio", "choice", true)}
 </fieldset>
 ${freeText}`;
     }
@@ -36891,8 +36892,8 @@ ${freeText}`;
       const noChecked = question.defaultValue === false ? " checked" : "";
       return `<fieldset>
   <legend>Answer</legend>
-  <label class="opt"><input type="radio" name="confirm" value="true"${yesChecked}> <span class="label">Yes</span></label>
-  <label class="opt"><input type="radio" name="confirm" value="false"${noChecked}> <span class="label">No</span></label>
+  <label class="opt"><input type="radio" name="confirm" value="true" required${yesChecked}> <span class="label">Yes</span></label>
+  <label class="opt"><input type="radio" name="confirm" value="false" required${noChecked}> <span class="label">No</span></label>
 </fieldset>`;
     }
     case "text": {
@@ -36903,16 +36904,18 @@ ${freeText}`;
 </label>`;
     }
     case "multi_select": {
+      const minSelections = question.min ?? 1;
+      const needOne = minSelections >= 1;
       if (multiSelectMode === "text") {
         const allowed = question.options.map((option) => option.label).join(", ");
         return `<label class="block">Selections (comma-separated)
-  <input type="text" name="choices_text" placeholder="${escapeHtml(allowed)}">
+  <input type="text" name="choices_text" placeholder="${escapeHtml(allowed)}"${needOne ? " required" : ""}>
 </label>
 <p class="hint">Allowed: ${escapeHtml(allowed)}</p>`;
       }
       return `<fieldset>
   <legend>Select one or more</legend>
-  ${optionRows(question.options, "checkbox", "choices")}
+  ${optionRows(question.options, "checkbox", "choices", needOne)}
 </fieldset>`;
     }
   }
@@ -37728,7 +37731,7 @@ function registerTools(server, config2) {
       const report = {
         server: SERVER_NAME,
         version: SERVER_VERSION,
-        client_supports_form_elicitation: Boolean(capabilities?.elicitation?.form),
+        client_supports_form_elicitation: Boolean(capabilities?.elicitation),
         client_supports_url_elicitation: Boolean(capabilities?.elicitation?.url),
         client_version: server.server.getClientVersion() ?? null,
         fallback_mode: config2.fallback,

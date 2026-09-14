@@ -13,3 +13,6 @@ dist/
 Thumbs.db
 .vscode/
 .idea/
+
+# Python 字节码（install.py 本地运行产生）
+__pycache__/

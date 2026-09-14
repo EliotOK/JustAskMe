@@ -86,14 +86,21 @@ cd <本仓库>
 .\Install.cmd
 ```
 
-`Install.cmd` 会调用 `install.py`，它做四件事：
+`Install.cmd` 会调用 `install.py`，它做六件事：
 
-1. 把 `plugins/codex-human-input-mcp` 复制到 `~\plugins\codex-human-input-mcp`；
-2. 把 `.mcp.json` 里的裸 `node` **改写成这台机器的绝对路径**（这样插件不依赖子进程的 PATH）；
-3. 用官方 `plugin-creator` 助手更新 cachebuster 并校验；
-4. `codex plugin add codex-human-input-mcp@personal`。
+1. 检查 `%USERPROFILE%\.codex\config.toml`：若已有手工注册的 `[mcp_servers.human_input]`，
+   **直接终止**并说明原因（插件与手工注册并存会出现两份 `ask_*` 工具）；加 `--migrate`
+   则在装完后自动把该段**注释掉**（不删除，回滚即删掉注释块）；
+2. 把 `plugins/codex-human-input-mcp` 复制到 `~\plugins\codex-human-input-mcp`；
+3. 把 `.mcp.json` 里的裸 `node` **改写成这台机器的绝对路径**（这样插件不依赖子进程的 PATH）；
+4. 用官方 `plugin-creator` 助手更新 cachebuster 并校验；
+5. `codex plugin add codex-human-input-mcp@personal`；
+6. 迁移收尾：注释掉手工 server 段；`--migrate` 时还会把 `~\.codex\skills\discussion-mode\`
+   手工副本**改名归档**为 `discussion-mode.bak-<时间戳>`（不删除）——插件内是更新的版本
+   （含「提问时机」一节、会话级持续生效）。
 
-装完**开新任务**，然后说一句「遇到需要我决定的地方就弹卡片问我」即可。
+装完**开新任务**验证两件事：`human_input_status` 只报告一套 `ask_*` 工具；`$discussion-mode`
+是插件版（行为准则里含「提问时机」）。然后说一句「遇到需要我决定的地方就弹卡片问我」即可。
 
 ### 4.2 手工接进已有的 `config.toml`
 
@@ -102,7 +109,7 @@ cd <本仓库>
 ```toml
 [mcp_servers.human_input]
 command = "node"
-args = ["D:\\sci\\arid\\work\\career\\codex-human-input-mcp\\dist\\index.js"]
+args = ["<本仓库克隆位置>\\dist\\index.js"]
 startup_timeout_sec = 30
 tool_timeout_sec = 600
 [mcp_servers.human_input.env]
@@ -110,12 +117,15 @@ HIM_FALLBACK = "return"
 HIM_TIMEOUT_MS = "300000"
 ```
 
+> 手工注册与插件是**二选一**：并存会注册两个同名 server，每个 `ask_*` 工具出现两份。
+> 之后想切到插件形态，跑 `.\Install.cmd --migrate` 即可自动迁移。
+
 ### 4.3 从源码开发
 
 ```powershell
 npm install
 npm run build          # tsc → dist/
-npm test               # 41 个单元测试
+npm test               # 44 个单元测试
 npm run build:plugin   # esbuild → plugins/*/server/index.mjs
 npm run test:plugin    # 对打包产物跑 stdio 冒烟
 npm run verify         # 以上全套
@@ -150,7 +160,7 @@ npm run verify         # 以上全套
 
 [mcp_servers.human_input]
 command = "node"
-args = ["D:\\sci\\arid\\work\\career\\codex-human-input-mcp\\dist\\index.js"]
+args = ["<本仓库克隆位置>\\dist\\index.js"]
 startup_timeout_sec = 30
 tool_timeout_sec = 600          # 必须 >= HIM_TIMEOUT_MS/1000，否则表单还没提交就被掐
 [mcp_servers.human_input.env]
@@ -166,7 +176,7 @@ HIM_TIMEOUT_MS = "300000"
 codex mcp add human_input `
   --env HIM_FALLBACK=return `
   --env HIM_TIMEOUT_MS=300000 `
-  -- node "D:\sci\arid\work\career\codex-human-input-mcp\dist\index.js"
+  -- node "<本仓库克隆位置>\dist\index.js"
 ```
 
 `codex mcp add` 只写 `[mcp_servers.*]`，这就够了——granular 那一段是可选的（见 §5.1）。
@@ -301,7 +311,7 @@ codex doctor --json | Select-String 'mcp'
 ## 10. 测试
 
 ```powershell
-npm test                      # 41 个测试
+npm test                      # 44 个测试
 npx tsc -p tsconfig.test.json # 源码 + 测试全量类型检查
 node scripts/smoke-stdio.mjs  # 真实子进程 stdio 端到端
 node scripts/smoke-stdio.mjs --manual   # 人工模式：题目打到终端，你手动回答

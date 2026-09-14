@@ -55,15 +55,24 @@ function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(left, right);
 }
 
-function optionRows(options: ChoiceOption[], inputType: 'radio' | 'checkbox', name: string): string {
+function optionRows(
+  options: ChoiceOption[],
+  inputType: 'radio' | 'checkbox',
+  name: string,
+  required: boolean
+): string {
   return options
     .map((option, index) => {
       const id = `${name}_${index}`;
       const description = option.description
         ? `<span class="desc">${escapeHtml(option.description)}</span>`
         : '';
+      // `required` on every input of a radio/checkbox group makes the browser
+      // refuse an empty submit ("choose one of these"), so an unanswered form
+      // can no longer reach the server as a bogus success.
+      const requiredAttr = required ? ' required' : '';
       return `<label class="opt" for="${id}">
-  <input type="${inputType}" id="${id}" name="${escapeHtml(name)}" value="${escapeHtml(option.label)}">
+  <input type="${inputType}" id="${id}" name="${escapeHtml(name)}" value="${escapeHtml(option.label)}"${requiredAttr}>
   <span class="label">${escapeHtml(option.label)}</span>${description}
 </label>`;
     })
@@ -80,7 +89,7 @@ function buildBody(question: FormQuestion, multiSelectMode: 'array' | 'text'): s
         : '';
       return `<fieldset>
   <legend>Choose one</legend>
-  ${optionRows(question.options, 'radio', 'choice')}
+  ${optionRows(question.options, 'radio', 'choice', true)}
 </fieldset>
 ${freeText}`;
     }
@@ -89,8 +98,8 @@ ${freeText}`;
       const noChecked = question.defaultValue === false ? ' checked' : '';
       return `<fieldset>
   <legend>Answer</legend>
-  <label class="opt"><input type="radio" name="confirm" value="true"${yesChecked}> <span class="label">Yes</span></label>
-  <label class="opt"><input type="radio" name="confirm" value="false"${noChecked}> <span class="label">No</span></label>
+  <label class="opt"><input type="radio" name="confirm" value="true" required${yesChecked}> <span class="label">Yes</span></label>
+  <label class="opt"><input type="radio" name="confirm" value="false" required${noChecked}> <span class="label">No</span></label>
 </fieldset>`;
     }
     case 'text': {
@@ -101,16 +110,18 @@ ${freeText}`;
 </label>`;
     }
     case 'multi_select': {
+      const minSelections = question.min ?? 1;
+      const needOne = minSelections >= 1;
       if (multiSelectMode === 'text') {
         const allowed = question.options.map(option => option.label).join(', ');
         return `<label class="block">Selections (comma-separated)
-  <input type="text" name="choices_text" placeholder="${escapeHtml(allowed)}">
+  <input type="text" name="choices_text" placeholder="${escapeHtml(allowed)}"${needOne ? ' required' : ''}>
 </label>
 <p class="hint">Allowed: ${escapeHtml(allowed)}</p>`;
       }
       return `<fieldset>
   <legend>Select one or more</legend>
-  ${optionRows(question.options, 'checkbox', 'choices')}
+  ${optionRows(question.options, 'checkbox', 'choices', needOne)}
 </fieldset>`;
     }
   }

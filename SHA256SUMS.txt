@@ -1,5 +1,5 @@
-﻿494e1566c68b3aa43e65e1b1d3d6f501aa4780fdd2753c1c3d9a6c240a1732bd  plugins/codex-human-input-mcp/.codex-plugin/plugin.json
+494e1566c68b3aa43e65e1b1d3d6f501aa4780fdd2753c1c3d9a6c240a1732bd  plugins/codex-human-input-mcp/.codex-plugin/plugin.json
 745306875e24338954fcc1231dab5516bf1e06ff076366f34aee3c433071201d  plugins/codex-human-input-mcp/.mcp.json
 c45413273c6741fd8786e6a457b9a549c3b2d2bb11f047004e1d3b989ab07ec7  plugins/codex-human-input-mcp/README.md
-1221a1b8db24af21883cc8b3e51f1de96ed5c93cee810b189286c81879f25241  plugins/codex-human-input-mcp/server/index.mjs
+6205e15e65cfbfdbcd3a4ab6e4fec3e34840e2dec6b24da69f6dc9ecb61f650d  plugins/codex-human-input-mcp/server/index.mjs
 28fbdb2b590d5d5dae7920d4f3b04b561007d32bae933ad098d7c10f1118a24d  plugins/codex-human-input-mcp/skills/discussion-mode/SKILL.md

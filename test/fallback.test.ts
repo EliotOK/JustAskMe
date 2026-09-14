@@ -9,7 +9,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type {
+  CallToolResult,
+  ClientCapabilities
+} from '@modelcontextprotocol/sdk/types.js';
 import { serveForm } from '../src/http-form.js';
 import type { FormQuestion } from '../src/outcome.js';
 import { asAskResult, callTool, delay, startHarness, textOf } from './helpers.js';
@@ -91,8 +94,10 @@ describe('http fallback', () => {
       assert.equal(page.status, 200);
       const html = await page.text();
       assert.match(html, /Proceed with the irreversible schema migration\?/);
-      assert.match(html, /name="confirm" value="true"/);
-      assert.match(html, /name="confirm" value="false"/);
+      // `required` keeps an empty submit in the browser instead of producing a
+      // bogus "answered" with no boolean.
+      assert.match(html, /name="confirm" value="true" required/);
+      assert.match(html, /name="confirm" value="false" required/);
       assert.doesNotMatch(html, /https?:\/\/(?!127\.0\.0\.1)/, 'the page must not pull in external resources');
 
       const posted = await submit(url, { cancelled: false, values: { confirm: 'true' } });
@@ -201,7 +206,7 @@ describe('http fallback', () => {
 
       const url = await waitForUrl(captured.lines);
       const page = await (await fetch(url)).text();
-      assert.match(page, /name="choices" value="windows"/);
+      assert.match(page, /name="choices" value="windows" required/);
       assert.match(page, /type="checkbox"/);
 
       await submit(url, { cancelled: false, values: { choices: ['windows', 'macos'] } });
@@ -260,6 +265,49 @@ describe('human_input_status', () => {
         'ask_multi_select',
         'human_input_status'
       ]);
+    } finally {
+      await harness.close();
+    }
+  });
+});
+
+describe('legacy elicitation capability', () => {
+  // Pre-2025-11 clients declare the bare legacy shape `elicitation: {}`. The
+  // SDK normalizes that to `{ form: {} }`, and its own gate for
+  // `elicitation/create` is a truthy `elicitation` object — so these clients
+  // must be served, not routed to the fallback.
+  const LEGACY: ClientCapabilities = { elicitation: {} };
+
+  it('reports a legacy `elicitation: {}` client as elicitation-capable', async () => {
+    const harness = await startHarness({ capabilities: LEGACY, config: { fallback: 'return' } });
+    try {
+      const raw = (await harness.client.callTool(
+        { name: 'human_input_status', arguments: {} },
+        CallToolResultSchema
+      )) as unknown as CallToolResult;
+      const report = JSON.parse(textOf(raw)) as Record<string, unknown>;
+      assert.equal(report['client_supports_form_elicitation'], true);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('answers ask_choice over elicitation for a legacy `elicitation: {}` client', async () => {
+    const harness = await startHarness({
+      capabilities: LEGACY,
+      config: { fallback: 'return' },
+      onElicit: () => ({ action: 'accept', content: { choice: 'http' } })
+    });
+    try {
+      const result = asAskResult(
+        await harness.client.callTool({
+          name: 'ask_choice',
+          arguments: { question: 'Which protocol?', options: [{ label: 'http' }, { label: 'grpc' }] }
+        }, CallToolResultSchema)
+      );
+      assert.equal(result.status, 'answered');
+      assert.equal(result.via, 'elicitation');
+      assert.equal(result.answer, 'http');
     } finally {
       await harness.close();
     }
