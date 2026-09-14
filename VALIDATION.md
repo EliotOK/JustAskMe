@@ -169,3 +169,27 @@ smoke test OK
 - 本轮改动后的**真实 Codex Desktop 弹窗回归**未重跑（第 5 节的端到端结论仍基于上一轮）；
   弹窗路径的代码（`forms.ts` 消息文本、`elicitation.ts` 预检）已由新增单测覆盖，
   但表单在 Codex UI 中的实际渲染建议在下一轮实测时复核。
+
+---
+
+## 第三轮验证（2026-09-14，skill 改名 discuss-with-me）
+
+改动：技能 `discussion-mode` → `discuss-with-me`（目录、frontmatter `name`、触发词
+`$discuss-with-me`，界面显示名 "Discuss with me"）；版本 0.1.0 → 0.1.1；`install.py`
+同时识别新旧两个技能名做冲突归档，并在复制后清理目标树里残留的旧名技能目录
+（`remove_stale_target_skill`），避免改名后插件里两份并存。
+
+### 1. 全量回归
+
+`npm run verify`：44/44 通过 + 插件冒烟 `smoke test OK`（新 bundle 含改名后的技能路径）。
+
+### 2. install.py 行为验证
+
+- `py_compile` 通过；
+- 临时目录驱动：新旧两个名字的手工技能目录均被归档为 `<名字>.bak-<时间戳>`；
+- 目标树同时存在新旧技能目录时，仅清除旧名 `skills/discussion-mode`，保留新名；
+- 既有 4 个 section-span 回归用例不受影响。
+
+### 3. 未覆盖
+
+- 改名后的真实 Codex 端到端（弹窗 + `$discuss-with-me` 触发）待用户在新任务中实测。

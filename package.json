@@ -1,8 +1,8 @@
 {
   "name": "codex-human-input-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
-  "description": "Structured human-in-the-loop questions for OpenAI Codex CLI (and any MCP client) via MCP form elicitation, with a safe non-blocking fallback. Ships as a Codex plugin bundling a discussion-mode skill.",
+  "description": "Structured human-in-the-loop questions for OpenAI Codex CLI (and any MCP client) via MCP form elicitation, with a safe non-blocking fallback. Ships as a Codex plugin bundling a discuss-with-me skill.",
   "type": "module",
   "license": "MIT",
   "author": {

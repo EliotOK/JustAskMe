@@ -78,7 +78,7 @@ codex-human-input-mcp/
 ### 4.1 作为 Codex 插件（推荐）
 
 本仓库本身就是一个 Codex 插件仓库，`plugins/codex-human-input-mcp/` 内含 MCP server 与
-`discussion-mode` 技能。发布用的 server 是 esbuild 打包的**单文件**（已内联 SDK 与 zod），
+`discuss-with-me`（讨论模式）技能。发布用的 server 是 esbuild 打包的**单文件**（已内联 SDK 与 zod），
 所以安装**不需要 `npm install`**，只需要 `PATH` 上有 Node ≥ 20。
 
 ```powershell
@@ -95,11 +95,11 @@ cd <本仓库>
 3. 把 `.mcp.json` 里的裸 `node` **改写成这台机器的绝对路径**（这样插件不依赖子进程的 PATH）；
 4. 用官方 `plugin-creator` 助手更新 cachebuster 并校验；
 5. `codex plugin add codex-human-input-mcp@personal`；
-6. 迁移收尾：注释掉手工 server 段；`--migrate` 时还会把 `~\.codex\skills\discussion-mode\`
-   手工副本**改名归档**为 `discussion-mode.bak-<时间戳>`（不删除）——插件内是更新的版本
+6. 迁移收尾：注释掉手工 server 段；`--migrate` 时还会把 `~\.codex\skills\discuss-with-me\`（或旧名 `discussion-mode\`）
+   手工副本**改名归档**为 `<名字>.bak-<时间戳>`（不删除）——插件内是更新的版本
    （含「提问时机」一节、会话级持续生效）。
 
-装完**开新任务**验证两件事：`human_input_status` 只报告一套 `ask_*` 工具；`$discussion-mode`
+装完**开新任务**验证两件事：`human_input_status` 只报告一套 `ask_*` 工具；`$discuss-with-me`
 是插件版（行为准则里含「提问时机」）。然后说一句「遇到需要我决定的地方就弹卡片问我」即可。
 
 ### 4.2 手工接进已有的 `config.toml`

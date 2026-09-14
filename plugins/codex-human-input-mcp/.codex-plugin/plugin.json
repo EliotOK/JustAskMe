@@ -1,7 +1,7 @@
 {
   "name": "codex-human-input-mcp",
-  "version": "0.1.0",
-  "description": "让 Codex 主动向用户发起结构化提问并阻塞等待回答，附带 discussion-mode 技能。",
+  "version": "0.1.1",
+  "description": "让 Codex 主动向用户发起结构化提问并阻塞等待回答，附带 discuss-with-me（讨论模式）技能。",
   "author": {
     "name": "EliotOK",
     "url": "https://github.com/EliotOK"
@@ -21,7 +21,7 @@
   "interface": {
     "displayName": "Human Input · 结构化提问",
     "shortDescription": "弹出表单问用户，等到答案再继续",
-    "longDescription": "通过 MCP form elicitation 在 Codex 界面弹出结构化表单并阻塞等待回答，提供 ask_choice / ask_confirm / ask_text / ask_multi_select 四个工具。客户端不支持 elicitation 时按 HIM_FALLBACK 降级为对话提问或本地表单页，不破坏 MCP 消息流。随附 discussion-mode 技能，规定何时该问、何时自行决定。",
+    "longDescription": "通过 MCP form elicitation 在 Codex 界面弹出结构化表单并阻塞等待回答，提供 ask_choice / ask_confirm / ask_text / ask_multi_select 四个工具。客户端不支持 elicitation 时按 HIM_FALLBACK 降级为对话提问或本地表单页，不破坏 MCP 消息流。随附 discuss-with-me（讨论模式）技能，规定何时该问、何时自行决定。",
     "developerName": "EliotOK",
     "category": "Productivity",
     "capabilities": [
@@ -29,7 +29,7 @@
     ],
     "defaultPrompt": [
       "遇到需要我决定的地方就弹卡片问我",
-      "用 $discussion-mode 边做边确认关键选择"
+      "用 $discuss-with-me 边做边确认关键选择"
     ],
     "brandColor": "#7C5CFF"
   }

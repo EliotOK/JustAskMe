@@ -9,7 +9,7 @@ Mirrors the flow used by the sibling `codex-turn-meter-package` repo:
   5. migrate away conflicting manual registrations (with `--migrate`)
 
 The plugin declares the same MCP server key (`human_input`) and the same skill
-name (`discussion-mode`) that a hand-written `config.toml` / `~/.codex/skills`
+name (`discuss-with-me`, legacy `discussion-mode`) that a hand-written `config.toml` / `~/.codex/skills`
 setup uses. Running both registrations at once means duplicated `ask_*` tools,
 so the installer refuses to install over a live manual server entry unless
 `--migrate` is passed; migration comments the TOML section out (never deletes)
@@ -28,7 +28,8 @@ from pathlib import Path
 
 PLUGIN_NAME = 'codex-human-input-mcp'
 SERVER_KEY = 'human_input'
-SKILL_NAME = 'discussion-mode'
+SKILL_NAME = 'discuss-with-me'
+LEGACY_SKILL_NAME = 'discussion-mode'  # pre-0.1.1 plugin/manual copies
 
 # A TOML table header that belongs to our server: the server table itself and
 # any of its sub-tables (`[mcp_servers.human_input.env]`, ...).
@@ -101,21 +102,34 @@ def check_manual_server(home, migrate):
 
 def archive_manual_skill(home, migrate):
     """Warn about (and optionally archive) a manually installed same-name skill."""
-    manual = home / '.codex' / 'skills' / SKILL_NAME
-    if not manual.is_dir():
-        return
-    if not migrate:
-        print(
-            f'NOTE: {manual} also declares the `{SKILL_NAME}` skill. The manual copy and the '
-            'plugin copy will shadow each other; the plugin bundles a newer version '
-            '(question-timing rules, session-persistent activation).\n'
-            'Re-run with --migrate to archive the manual copy automatically (renamed, never deleted).'
-        )
-        return
-    stamp = time.strftime('%Y%m%d-%H%M%S')
-    backup = manual.with_name(f'{SKILL_NAME}.bak-{stamp}')
-    manual.rename(backup)
-    print(f'  archived {manual} -> {backup}')
+    for name in (SKILL_NAME, LEGACY_SKILL_NAME):
+        manual = home / '.codex' / 'skills' / name
+        if not manual.is_dir():
+            continue
+        if not migrate:
+            print(
+                f'NOTE: {manual} also declares the `{name}` skill. The manual copy and the '
+                'plugin copy will shadow each other; the plugin bundles a newer version '
+                '(question-timing rules, session-persistent activation).\n'
+                'Re-run with --migrate to archive the manual copy automatically (renamed, never deleted).'
+            )
+            return
+        stamp = time.strftime('%Y%m%d-%H%M%S')
+        backup = manual.with_name(f'{name}.bak-{stamp}')
+        manual.rename(backup)
+        print(f'  archived {manual} -> {backup}')
+
+
+def remove_stale_target_skill(target):
+    """Delete a pre-0.1.1 `skills/discussion-mode` copy left in the plugin target.
+
+    The target tree is this installer's own output, so removing the old-named
+    skill directory prevents the renamed plugin from shipping both copies.
+    """
+    stale = target / 'skills' / LEGACY_SKILL_NAME
+    if stale.is_dir():
+        shutil.rmtree(stale)
+        print(f'  removed stale {stale} (superseded by skills/{SKILL_NAME})')
 
 
 def main():
@@ -189,6 +203,8 @@ def main():
         ignore=shutil.ignore_patterns('__pycache__', '*.pyc'),
     )
 
+    remove_stale_target_skill(target)
+
     # Resolve `node` for this machine so the plugin does not depend on the
     # spawned process' PATH.
     config_path = target / '.mcp.json'
@@ -213,7 +229,7 @@ def main():
     print(f'Installed with node = {node}')
     print('Verify in a NEW Codex task:')
     print('  1. ask human_input_status — it must list exactly one set of ask_* tools.')
-    print('  2. Run $discussion-mode: it should mention 提问时机 (the plugin skill version).')
+    print('  2. Run $discuss-with-me: it should mention 提问时机 (the plugin skill version).')
     print('Then try: 遇到需要我决定的地方就弹卡片问我')
 
 

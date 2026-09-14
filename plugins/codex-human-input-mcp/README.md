@@ -5,7 +5,7 @@
 本目录是 Codex 插件本体，含两部分：
 
 - **MCP server**（`server/index.mjs`）—— 提供 `ask_choice` / `ask_confirm` / `ask_text` / `ask_multi_select` / `human_input_status`
-- **技能**（`skills/discussion-mode/`）—— 规定什么时候该问、什么时候自己决定
+- **技能**（`skills/discuss-with-me/`）—— 规定什么时候该问、什么时候自己决定
 
 ## 运行前提
 

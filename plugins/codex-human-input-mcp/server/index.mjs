@@ -36517,7 +36517,7 @@ var EMPTY_COMPLETION_RESULT = {
 
 // src/config.ts
 var SERVER_NAME = "codex-human-input-mcp";
-var SERVER_VERSION = "0.1.0";
+var SERVER_VERSION = "0.1.1";
 var DEFAULT_CONFIG = {
   timeoutMs: 3e5,
   fallback: "return",
