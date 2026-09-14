@@ -173,6 +173,22 @@ def remove_stale_target_skill(target):
         print(f'  removed stale {stale} (superseded by skills/{SKILL_NAME})')
 
 
+def run_helper(cmd, **kwargs):
+    """Run a plugin-creator helper, translating a broken interpreter into guidance.
+
+    A crippled python.exe on PATH (LibreOffice bundles one) fails with WinError 5
+    the moment it must spawn a child; that should read as guidance, not a traceback.
+    """
+    try:
+        return subprocess.run(cmd, **kwargs)
+    except OSError as error:
+        raise SystemExit(
+            f'Could not run {cmd[1] if len(cmd) > 1 else cmd[0]} with {cmd[0]} ({error}). '
+            'The interpreter on PATH is probably broken (LibreOffice and some bundles ship '
+            'a crippled python.exe). Re-run with an explicit one, e.g. "py -3 install.py".'
+        )
+
+
 def main():
     if sys.version_info < (3, 10):
         raise SystemExit('Python 3.10+ is required.')
@@ -215,9 +231,10 @@ def main():
     marketplace = home / '.agents/plugins/marketplace.json'
     existing = marketplace.exists()
     if existing:
-        market = subprocess.check_output(
-            [sys.executable, str(helpers / 'read_marketplace_name.py')], text=True
-        ).strip()
+        market = run_helper(
+            [sys.executable, str(helpers / 'read_marketplace_name.py')],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
     else:
         market = 'personal'
 
@@ -234,7 +251,7 @@ def main():
         ):
             raise SystemExit('Existing target has no matching personal marketplace entry.')
     else:
-        subprocess.run(
+        run_helper(
             [sys.executable, str(create), PLUGIN_NAME, '--with-skills', '--with-mcp', '--with-marketplace'],
             check=True,
         )
@@ -257,9 +274,16 @@ def main():
     config['mcpServers'][SERVER_KEY]['command'] = node
     config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
-    subprocess.run([sys.executable, str(helpers / 'update_plugin_cachebuster.py'), str(target)], check=True)
-    subprocess.run([sys.executable, str(helpers / 'validate_plugin.py'), str(target)], check=True)
-    subprocess.run([codex, 'plugin', 'add', f'{PLUGIN_NAME}@{market}'], check=True)
+    run_helper([sys.executable, str(helpers / 'update_plugin_cachebuster.py'), str(target)], check=True)
+    run_helper([sys.executable, str(helpers / 'validate_plugin.py'), str(target)], check=True)
+    try:
+        subprocess.run([codex, 'plugin', 'add', f'{PLUGIN_NAME}@{market}'], check=True)
+    except OSError as error:
+        raise SystemExit(
+            f'Could not spawn the Codex CLI ({error}). Re-run with an explicit interpreter, '
+            'e.g. "py -3 install.py", or run "codex plugin add '
+            f'{PLUGIN_NAME}@{market}" yourself.'
+        )
 
     # Migrate only after the plugin is registered, so a failed install never
     # leaves the user with neither registration working.
