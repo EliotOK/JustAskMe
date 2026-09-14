@@ -1,0 +1,16 @@
+# 统一换行符。这条是为了保护 SHA256SUMS.txt：
+# 校验和基于文件字节，若 checkout 时被转成 CRLF，校验就会失败。
+* text=auto eol=lf
+
+# Windows 批处理必须保持 CRLF，否则 cmd.exe 解析异常
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# 二进制，禁止任何转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.pdf binary
