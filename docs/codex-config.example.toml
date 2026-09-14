@@ -1,8 +1,8 @@
-# codex-human-input-mcp — Codex CLI 接入示例
+# JustAskMe (just-ask-me) — Codex CLI 接入示例
 #
 # 放到 %USERPROFILE%\.codex\config.toml（或 $CODEX_HOME/config.toml）。
 # 也可以让 CLI 自己写：[mcp_servers] 块等价于
-#   codex mcp add human_input --env HIM_FALLBACK=return -- node "D:\path\to\codex-human-input-mcp\dist\index.js"
+#   codex mcp add human_input --env HIM_FALLBACK=return -- node "D:\path\to\JustAskMe\dist\index.js"
 
 # ---------------------------------------------------------------------------
 # 1) 让 Codex 真的把 elicitation 表单弹给用户
@@ -30,7 +30,7 @@ rules = true
 [mcp_servers.human_input]
 # 推荐用 node 跑构建产物；Windows 上不需要 .cmd 包装，也不需要 shell
 command = "node"
-args = ["D:\\path\\to\\codex-human-input-mcp\\dist\\index.js"]
+args = ["D:\\path\\to\\JustAskMe\\dist\\index.js"]
 
 # 冷启动 + npm 缓存未命中时 10s 可能不够，给宽一点
 startup_timeout_sec = 30

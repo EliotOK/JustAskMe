@@ -52,7 +52,7 @@ npm run build:plugin
 ```
 
 `esbuild` 把 `src/index.ts` 连同 `@modelcontextprotocol/sdk` 与 `zod` 打成单文件
-`plugins/codex-human-input-mcp/server/index.mjs`（约 1.34 MB，内联全部依赖；`node_modules` 为 60.1 MB）。
+`plugins/just-ask-me/server/index.mjs`（约 1.34 MB，内联全部依赖；`node_modules` 为 60.1 MB）。
 
 **隔离验证**：把该文件复制到项目目录之外（`%TEMP%\him-bundle-test\`，同级无 `node_modules`），
 再对它跑 stdio 冒烟：
@@ -69,7 +69,7 @@ node scripts/smoke-stdio.mjs <项目外的 index.mjs 路径>
 ### 4. 官方插件校验器
 
 ```powershell
-python %USERPROFILE%\.codex\skills\.system\plugin-creator\scripts\validate_plugin.py plugins/codex-human-input-mcp
+python %USERPROFILE%\.codex\skills\.system\plugin-creator\scripts\validate_plugin.py plugins/just-ask-me
 ```
 
 ```
@@ -92,7 +92,7 @@ Plugin validation passed: ...\plugins\codex-human-input-mcp
 ### 6. 校验和
 
 ```powershell
-Get-FileHash -Algorithm SHA256 plugins/codex-human-input-mcp/**/*
+Get-FileHash -Algorithm SHA256 plugins/just-ask-me/**/*
 ```
 见仓库根目录 `SHA256SUMS.txt`。
 
@@ -193,3 +193,31 @@ smoke test OK
 ### 3. 未覆盖
 
 - 改名后的真实 Codex 端到端（弹窗 + `$discuss-with-me` 触发）待用户在新任务中实测。
+
+---
+
+## 第四轮验证（2026-09-14，插件更名 JustAskMe，v0.2.0）
+
+改动：GitHub 仓库改名 `JustAskMe`（旧地址自动重定向）；插件标识 `just-ask-me`、显示名
+"JustAskMe"，插件目录 `plugins/just-ask-me/`，日志前缀与 `SERVER_NAME` 同步；
+版本 0.2.0。**MCP server 键保持 `human_input`**，避免破坏既有手工配置示例。
+`install.py` 新增 `migrate_legacy_plugin`：检测旧名插件的目标目录与 marketplace 条目，
+best-effort `codex plugin remove` 后清理目录和条目。插件版技能的「使用工具并等待」
+一节收窄为同步优先表述（异步规则压缩为一句通用备注）；`~/.agents` 跨 agent 版保持三分支。
+
+### 1. 全量回归
+
+`npm run verify`：44/44 通过 + 插件冒烟 `smoke test OK`；日志前缀实测为
+`[just-ask-me] info: ready (...)`。
+
+### 2. install.py 行为验证
+
+- `py_compile` 通过；
+- 临时目录 + 假 codex CLI 驱动：旧名目标目录被删除、旧 marketplace 条目被剔除、
+  无害条目保留；无旧安装时函数为 no-op；
+- 既有 section-span 与技能归档/残留清理用例不受影响。
+
+### 3. 未覆盖
+
+- `codex plugin remove` 的真实执行在真机迁移时验证；
+- 改名后的 Codex 弹窗来源标注应显示 `just-ask-me`，待用户实测确认。

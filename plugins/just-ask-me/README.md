@@ -1,4 +1,4 @@
-# codex-human-input-mcp
+# JustAskMe
 
 让 Codex 能主动向你发起**结构化提问**并等你回答，体验接近 Claude Code 的 `AskUserQuestion`。
 

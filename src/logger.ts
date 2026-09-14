@@ -30,7 +30,7 @@ export function setLogLevel(level: string | undefined): LogLevel {
 function write(level: Exclude<LogLevel, 'silent'>, args: unknown[]): void {
   if (LOG_LEVELS[level] > threshold) return;
   try {
-    process.stderr.write(`[codex-human-input-mcp] ${level}: ${format(...args)}\n`);
+    process.stderr.write(`[just-ask-me] ${level}: ${format(...args)}\n`);
   } catch {
     // Logging must never take the server down.
   }

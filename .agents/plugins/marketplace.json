@@ -1,14 +1,14 @@
 {
-  "name": "eliotok-human-input",
+  "name": "justaskme",
   "interface": {
-    "displayName": "Eliotok Human Input"
+    "displayName": "JustAskMe"
   },
   "plugins": [
     {
-      "name": "codex-human-input-mcp",
+      "name": "just-ask-me",
       "source": {
         "source": "local",
-        "path": "./plugins/codex-human-input-mcp"
+        "path": "./plugins/just-ask-me"
       },
       "policy": {
         "installation": "AVAILABLE",

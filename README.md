@@ -1,4 +1,4 @@
-# codex-human-input-mcp
+# JustAskMe
 
 让 **OpenAI Codex CLI**（以及任何支持 MCP 的客户端）能主动向用户发起**结构化提问**并等待回答——体验接近 Claude Code 的 `AskUserQuestion`。
 
@@ -20,7 +20,7 @@
 | 默认超时 | ⚠️ `DEFAULT_REQUEST_TIMEOUT_MSEC = 60000`，不显式传 `timeout` 就 60 秒静默超时 | `dist/esm/shared/protocol.d.ts:57` |
 | SDK 会校验用户回答吗 | ⚠️ **会**，用 Ajv 按 `requestedSchema` 校验；不匹配抛 `McpError(InvalidParams)`，所以越界选项**到不了本项目的代码** | `dist/esm/server/index.js:356-369` |
 | 取消能否传递到 server | ✅ 能。客户端 abort → SDK 发 `notifications/cancelled` → server 的 `extra.signal` 被 abort | `dist/esm/shared/protocol.js:169-176, 670-687` |
-| Codex CLI 是否支持 elicitation | ✅ 0.144.3 支持，**且默认配置下就能弹表单**——`approval policy = OnRequest`、完全不配置 `mcp_elicitations` 时实测正常弹出 | 2026-09-14 实测：Codex Desktop 弹出模态表单，来源标注 `codex-human-input-mcp` |
+| Codex CLI 是否支持 elicitation | ✅ 0.144.3 支持，**且默认配置下就能弹表单**——`approval policy = OnRequest`、完全不配置 `mcp_elicitations` 时实测正常弹出 | 2026-09-14 实测：Codex Desktop 弹出模态表单，来源标注 `just-ask-me` |
 | Codex 会渲染表单吗 | ✅ **已实测原生渲染**：模态框 + 下拉选择 + 跳过/继续按钮 | 同上。「server 能发起 elicitation」与「客户端一定会渲染」仍是两件事，§13 保留了这个区分 |
 | Codex 的 granular 配置 | ⚠️ **通常不需要**，只在想显式**关闭** elicitation 时才用。真要写时有**必填**字段：`sandbox_approval`、`mcp_elicitations`、`rules`，少一个 Codex **拒绝加载整个 config.toml** | 本机实测：`missing field 'sandbox_approval'` / `missing field 'rules'` |
 
@@ -31,7 +31,7 @@
 ## 2. 目录结构
 
 ```
-codex-human-input-mcp/
+JustAskMe/
 ├── src/
 │   ├── index.ts          # stdio 入口：唯一的 stdout 消费者是 JSON-RPC transport
 │   ├── server.ts         # McpServer 组装 + 通过 initialize 下发的 instructions
@@ -77,7 +77,7 @@ codex-human-input-mcp/
 
 ### 4.1 作为 Codex 插件（推荐）
 
-本仓库本身就是一个 Codex 插件仓库，`plugins/codex-human-input-mcp/` 内含 MCP server 与
+本仓库本身就是一个 Codex 插件仓库，`plugins/just-ask-me/` 内含 MCP server 与
 `discuss-with-me`（讨论模式）技能。发布用的 server 是 esbuild 打包的**单文件**（已内联 SDK 与 zod），
 所以安装**不需要 `npm install`**，只需要 `PATH` 上有 Node ≥ 20。
 
@@ -91,10 +91,10 @@ cd <本仓库>
 1. 检查 `%USERPROFILE%\.codex\config.toml`：若已有手工注册的 `[mcp_servers.human_input]`，
    **直接终止**并说明原因（插件与手工注册并存会出现两份 `ask_*` 工具）；加 `--migrate`
    则在装完后自动把该段**注释掉**（不删除，回滚即删掉注释块）；
-2. 把 `plugins/codex-human-input-mcp` 复制到 `~\plugins\codex-human-input-mcp`；
+2. 把 `plugins/just-ask-me` 复制到 `~\plugins\just-ask-me`；
 3. 把 `.mcp.json` 里的裸 `node` **改写成这台机器的绝对路径**（这样插件不依赖子进程的 PATH）；
 4. 用官方 `plugin-creator` 助手更新 cachebuster 并校验；
-5. `codex plugin add codex-human-input-mcp@personal`；
+5. `codex plugin add just-ask-me@personal`；
 6. 迁移收尾：注释掉手工 server 段；`--migrate` 时还会把 `~\.codex\skills\discuss-with-me\`（或旧名 `discussion-mode\`）
    手工副本**改名归档**为 `<名字>.bak-<时间戳>`（不删除）——插件内是更新的版本
    （含「提问时机」一节、会话级持续生效）。
@@ -338,8 +338,8 @@ node scripts/smoke-stdio.mjs --manual   # 人工模式：题目打到终端，�
 
 1. **看 server 的 stderr。** 把 `HIM_LOG=debug` 写进 `[mcp_servers.human_input.env]`，然后 Codex 运行时你会在终端看到：
    ```
-   [codex-human-input-mcp] info: ready (log=debug, fallback=return, timeout=300000ms, ...)
-   [codex-human-input-mcp] debug: elicitation/create resolved in 13ms: accept
+   [just-ask-me] info: ready (log=debug, fallback=return, timeout=300000ms, ...)
+   [just-ask-me] debug: elicitation/create resolved in 13ms: accept
    ```
    没看到 `ready` = server 没起来；看到 `ready` 但没有 `elicitation/create` = **模型没调这个工具**，是提示词/AGENTS.md 的问题，不是连接问题。
 
@@ -381,7 +381,7 @@ node scripts/smoke-stdio.mjs --manual   # 人工模式：题目打到终端，�
 - 本项目生成的每个 `requestedSchema` 都能通过 SDK 自己的 schema 校验且**无字段被 strip**（round-trip 测试）；
 - server 能以 stdio 被真实客户端拉起、握手、收发 `elicitation/create`（`scripts/smoke-stdio.mjs`）；
 - Codex 0.144.3 能解析配置、注册 server（`codex mcp list` 显示 `enabled`）；
-- **Codex Desktop 会原生渲染 elicitation 表单**（2026-09-14 实测）：`ask_choice` 弹出模态框，含 `Options:` 列表、下拉选择、跳过/继续按钮，来源标注 `codex-human-input-mcp`；
+- **Codex Desktop 会原生渲染 elicitation 表单**（2026-09-14 实测）：`ask_choice` 弹出模态框，含 `Options:` 列表、下拉选择、跳过/继续按钮，来源标注 `just-ask-me`；
 - **在 `approval policy = OnRequest`（非 granular、未配置 `mcp_elicitations`）下表单照样弹出**，即那个开关不是必需的；
 - 选项的描述文本如期出现在 `message` 正文里（确认了「per-option description 不可表达、必须内联」这个设计判断）。
 

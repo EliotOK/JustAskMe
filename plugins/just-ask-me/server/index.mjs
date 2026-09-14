@@ -28518,7 +28518,7 @@ function setLogLevel(level) {
 function write(level, args) {
   if (LOG_LEVELS[level] > threshold) return;
   try {
-    process.stderr.write(`[codex-human-input-mcp] ${level}: ${format(...args)}
+    process.stderr.write(`[just-ask-me] ${level}: ${format(...args)}
 `);
   } catch {
   }
@@ -36516,8 +36516,8 @@ var EMPTY_COMPLETION_RESULT = {
 };
 
 // src/config.ts
-var SERVER_NAME = "codex-human-input-mcp";
-var SERVER_VERSION = "0.1.1";
+var SERVER_NAME = "just-ask-me";
+var SERVER_VERSION = "0.2.0";
 var DEFAULT_CONFIG = {
   timeoutMs: 3e5,
   fallback: "return",

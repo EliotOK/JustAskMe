@@ -1,6 +1,6 @@
 /** Build-time identity of this MCP server. */
-export const SERVER_NAME = 'codex-human-input-mcp';
-export const SERVER_VERSION = '0.1.1';
+export const SERVER_NAME = 'just-ask-me';
+export const SERVER_VERSION = '0.2.0';
 
 /**
  * What to do when native MCP form elicitation is unavailable, fails, or is

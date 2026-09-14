@@ -3,7 +3,7 @@
 Mirrors the flow used by the sibling `codex-turn-meter-package` repo:
 
   1. scaffold a personal-marketplace entry (via the official plugin-creator helper)
-  2. copy `plugins/codex-human-input-mcp` into `~/plugins/codex-human-input-mcp`
+  2. copy `plugins/just-ask-me` into `~/plugins/just-ask-me`
   3. rewrite the bare `node` in `.mcp.json` to this machine's absolute Node path
   4. bump the cachebuster, validate, and register the plugin
   5. migrate away conflicting manual registrations (with `--migrate`)
@@ -26,7 +26,8 @@ import sys
 import time
 from pathlib import Path
 
-PLUGIN_NAME = 'codex-human-input-mcp'
+PLUGIN_NAME = 'just-ask-me'
+LEGACY_PLUGIN_NAME = 'codex-human-input-mcp'  # pre-0.2.0 installs
 SERVER_KEY = 'human_input'
 SKILL_NAME = 'discuss-with-me'
 LEGACY_SKILL_NAME = 'discussion-mode'  # pre-0.1.1 plugin/manual copies
@@ -80,6 +81,36 @@ def comment_out_server_section(config_path):
     config_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
     print(f'  {config_path}: commented out [mcp_servers.{SERVER_KEY}] (lines {start + 1}-{end + 1}); '
           'delete the block to roll back')
+
+
+def migrate_legacy_plugin(home, codex):
+    """Best-effort removal of pre-0.2.0 installs registered under the old name."""
+    legacy_target = home / 'plugins' / LEGACY_PLUGIN_NAME
+    marketplace = home / '.agents/plugins/marketplace.json'
+    entry_exists = False
+    if marketplace.is_file():
+        try:
+            entries = json.loads(marketplace.read_text(encoding='utf-8')).get('plugins', [])
+            entry_exists = any(p.get('name') == LEGACY_PLUGIN_NAME for p in entries)
+        except (json.JSONDecodeError, OSError):
+            pass
+    if not legacy_target.exists() and not entry_exists:
+        return
+    print(f'Migrating legacy {LEGACY_PLUGIN_NAME} install:')
+    subprocess.run(
+        [codex, 'plugin', 'remove', f'{LEGACY_PLUGIN_NAME}@personal'],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if legacy_target.exists():
+        shutil.rmtree(legacy_target)
+        print(f'  removed {legacy_target}')
+    if entry_exists:
+        data = json.loads(marketplace.read_text(encoding='utf-8'))
+        data['plugins'] = [p for p in data.get('plugins', []) if p.get('name') != LEGACY_PLUGIN_NAME]
+        marketplace.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+        print(f'  dropped {LEGACY_PLUGIN_NAME} from {marketplace}')
 
 
 def check_manual_server(home, migrate):
@@ -143,6 +174,8 @@ def main():
         raise SystemExit(f'Plugin source not found: {source}')
 
     check_manual_server(home, migrate)
+
+    migrate_legacy_plugin(home, codex)
 
     node = shutil.which('node')
     if not node:
