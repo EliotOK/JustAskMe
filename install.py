@@ -41,17 +41,22 @@ MIGRATION_END = '# <<< codex-human-input-mcp migration'
 def find_server_section(lines):
     """Line indices covered by `[mcp_servers.human_input*]` tables, or None."""
     span = None
+    bounded = False  # an unrelated header was found after the section
     for index, line in enumerate(lines):
         if span is None:
             if OURS_HEADER.match(line):
                 span = [index, index]
         elif ANY_HEADER.match(line) and not OURS_HEADER.match(line):
             span[1] = index - 1
+            bounded = True
             break
     if span is None:
         return None
-    # Extend to the last non-blank line before the next header so trailing
-    # blank lines stay outside the commented block.
+    if not bounded:
+        # No unrelated header followed: the section runs to EOF. (Sub-tables
+        # like `.env` match OURS_HEADER, so they never bound the span.)
+        span[1] = len(lines) - 1
+    # Trim trailing blank lines so they stay outside the commented block.
     end = span[1]
     while end > span[0] and lines[end].strip() == '':
         end -= 1
