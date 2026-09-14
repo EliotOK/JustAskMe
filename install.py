@@ -106,6 +106,16 @@ def migrate_legacy_plugin(home, codex):
     if legacy_target.exists():
         shutil.rmtree(legacy_target)
         print(f'  removed {legacy_target}')
+    legacy_cache = home / '.codex' / 'plugins' / 'cache' / 'personal' / LEGACY_PLUGIN_NAME
+    if legacy_cache.exists():
+        try:
+            shutil.rmtree(legacy_cache)
+            print(f'  removed {legacy_cache}')
+        except OSError as error:
+            print(
+                f'  NOTE: could not remove {legacy_cache} ({error.strerror}). A running Codex '
+                'process still holds it; close Codex and delete that directory manually.'
+            )
     if entry_exists:
         data = json.loads(marketplace.read_text(encoding='utf-8'))
         data['plugins'] = [p for p in data.get('plugins', []) if p.get('name') != LEGACY_PLUGIN_NAME]
@@ -175,8 +185,6 @@ def main():
 
     check_manual_server(home, migrate)
 
-    migrate_legacy_plugin(home, codex)
-
     node = shutil.which('node')
     if not node:
         raise SystemExit(
@@ -201,6 +209,8 @@ def main():
     )
     if not codex:
         raise SystemExit('Codex CLI not found in PATH.')
+
+    migrate_legacy_plugin(home, codex)
 
     marketplace = home / '.agents/plugins/marketplace.json'
     existing = marketplace.exists()
