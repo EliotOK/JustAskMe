@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "human_input": {
+      "command": "node",
+      "args": [
+        "./server/index.mjs"
+      ],
+      "cwd": "."
+    }
+  }
+}

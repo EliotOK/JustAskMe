@@ -1,0 +1,20 @@
+{
+  "name": "eliotok-human-input",
+  "interface": {
+    "displayName": "Eliotok Human Input"
+  },
+  "plugins": [
+    {
+      "name": "codex-human-input-mcp",
+      "source": {
+        "source": "local",
+        "path": "./plugins/codex-human-input-mcp"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

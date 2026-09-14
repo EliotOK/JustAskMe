@@ -1,0 +1,62 @@
+{
+  "name": "codex-human-input-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Structured human-in-the-loop questions for OpenAI Codex CLI (and any MCP client) via MCP form elicitation, with a safe non-blocking fallback. Ships as a Codex plugin bundling a discussion-mode skill.",
+  "type": "module",
+  "license": "MIT",
+  "author": {
+    "name": "EliotOK",
+    "url": "https://github.com/EliotOK"
+  },
+  "homepage": "https://github.com/EliotOK/codex-human-input-mcp",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EliotOK/codex-human-input-mcp.git"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "codex",
+    "elicitation",
+    "human-in-the-loop",
+    "ask-user-question"
+  ],
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "bin": {
+    "codex-human-input-mcp": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "AGENTS.md",
+    "docs"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "build:plugin": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=esm --outfile=plugins/codex-human-input-mcp/server/index.mjs --log-level=warning",
+    "clean": "node --input-type=module -e \"import {rmSync} from 'node:fs'; rmSync('dist',{recursive:true,force:true});\"",
+    "start": "node ./dist/index.js",
+    "dev": "tsx ./src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "node --import tsx --test \"test/*.test.ts\"",
+    "test:smoke": "node scripts/smoke-stdio.mjs",
+    "test:plugin": "node scripts/smoke-stdio.mjs plugins/codex-human-input-mcp/server/index.mjs",
+    "verify": "npm run typecheck && npm run build && npm run build:plugin && npm test && npm run test:plugin",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.1",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}

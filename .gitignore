@@ -1,0 +1,15 @@
+# 依赖（60 MB，绝不入库——发布用的 server 是打包后的单文件）
+node_modules/
+
+# TypeScript 编译产物（等价内容已内联进 plugins/*/server/index.mjs）
+dist/
+
+# 日志与临时目录
+*.log
+.codex-scratch/
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

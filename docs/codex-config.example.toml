@@ -1,0 +1,52 @@
+# codex-human-input-mcp — Codex CLI 接入示例
+#
+# 放到 %USERPROFILE%\.codex\config.toml（或 $CODEX_HOME/config.toml）。
+# 也可以让 CLI 自己写：[mcp_servers] 块等价于
+#   codex mcp add human_input --env HIM_FALLBACK=return -- node "D:\path\to\codex-human-input-mcp\dist\index.js"
+
+# ---------------------------------------------------------------------------
+# 1) 让 Codex 真的把 elicitation 表单弹给用户
+# ---------------------------------------------------------------------------
+# 实测于 codex-cli 0.144.3：这三个键是「必填」，少任何一个 Codex 会直接拒绝加载
+# 整个 config.toml，报 `missing field ...`（注意不是静默降级，是启动即失败）。
+#
+#   sandbox_approval  = true
+#   mcp_elicitations  = true   <-- 本项目的命脉；为 false 时 Codex 会静默自动拒绝
+#                                  所有 elicitation 请求，用户根本看不到表单
+#   rules             = true
+#
+# 可选：request_permissions、skill_approval（默认 false）
+#
+# 注意：不能同时写 `approval_policy = "on-request"` 和 `[approval_policy.granular]`，
+# TOML 会报 "cannot extend value of type string with a dotted key"。
+[approval_policy.granular]
+sandbox_approval = true
+mcp_elicitations = true
+rules = true
+
+# ---------------------------------------------------------------------------
+# 2) 注册 MCP server
+# ---------------------------------------------------------------------------
+[mcp_servers.human_input]
+# 推荐用 node 跑构建产物；Windows 上不需要 .cmd 包装，也不需要 shell
+command = "node"
+args = ["D:\\path\\to\\codex-human-input-mcp\\dist\\index.js"]
+
+# 冷启动 + npm 缓存未命中时 10s 可能不够，给宽一点
+startup_timeout_sec = 30
+
+# 关键：必须大于一道问题的等待时间。Codex 默认的工具超时会在用户还在读表单时
+# 就把 tools/call 掐掉，表现为「表单弹出来了但提交无效」。这里给 10 分钟。
+tool_timeout_sec = 600
+
+# 传给 MCP server 的环境变量
+[mcp_servers.human_input.env]
+HIM_FALLBACK = "return"      # 默认值；想让本地表单页兜底就改成 "http"
+HIM_TIMEOUT_MS = "300000"    # 单题等待上限（毫秒），需 <= tool_timeout_sec * 1000
+HIM_LOG = "info"             # silent | error | warn | info | debug，全部走 stderr
+
+# ---------------------------------------------------------------------------
+# 3) 用 streamable HTTP 跑（可选，需要自己加 --http 支持；默认只有 stdio）
+# ---------------------------------------------------------------------------
+# [mcp_servers.human_input]
+# url = "http://127.0.0.1:3939/mcp"
