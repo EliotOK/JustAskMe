@@ -1,424 +1,193 @@
 # JustAskMe
 
-让 **OpenAI Codex CLI**（以及任何支持 MCP 的客户端）能主动向用户发起**结构化提问**并等待回答——体验接近 Claude Code 的 `AskUserQuestion`。
+让 **Codex** 遇到需要你拍板的事时，弹出结构化表单等你回答——选择题、是/否确认、填空、多选，答完它再继续干活。体验对标 Claude Code 的 `AskUserQuestion`，但属于 Codex。
 
-不改 Codex 源码，不做网页 DOM hack，不要求常驻 GUI。
-
----
-
-## 1. 事实核查（先读这一节）
-
-你在别处看到的关于 MCP elicitation 的教程，很多在细节上是错的。下面每一条都在本机实测过，标注了证据。
-
-| 事项 | 结论 | 证据 |
-| --- | --- | --- |
-| MCP SDK 是否支持 elicitation | ✅ 支持 | `@modelcontextprotocol/sdk@1.30.0`，`dist/esm/server/index.d.ts:158` 有 `elicitInput(params, options): Promise<ElicitResult>` |
-| 返回结构 | `{ action: 'accept' \| 'decline' \| 'cancel', content?: Record<string, string\|number\|boolean\|string[]> }` | `dist/esm/types.d.ts:5381` `ElicitResultSchema` |
-| form 模式支持哪些字段 | 只支持**扁平原始类型**：string / boolean / number / integer / array-of-enum | `dist/esm/types.d.ts:4984-5062` |
-| SDK 会静默丢字段吗 | ⚠️ **会**。`properties` 用 Zod union + `.strip()`，不认识的键被**丢掉而不是报错** | 同上；`test/schema.test.ts` 用 round-trip 断言把这件事变成会失败的测试 |
-| 客户端没声明能力时 | ⚠️ `elicitInput()` **直接 throw** `'Client does not support form elicitation.'`，**不会**发出去 | `dist/esm/server/index.js:351` |
-| 默认超时 | ⚠️ `DEFAULT_REQUEST_TIMEOUT_MSEC = 60000`，不显式传 `timeout` 就 60 秒静默超时 | `dist/esm/shared/protocol.d.ts:57` |
-| SDK 会校验用户回答吗 | ⚠️ **会**，用 Ajv 按 `requestedSchema` 校验；不匹配抛 `McpError(InvalidParams)`，所以越界选项**到不了本项目的代码** | `dist/esm/server/index.js:356-369` |
-| 取消能否传递到 server | ✅ 能。客户端 abort → SDK 发 `notifications/cancelled` → server 的 `extra.signal` 被 abort | `dist/esm/shared/protocol.js:169-176, 670-687` |
-| Codex CLI 是否支持 elicitation | ✅ 0.144.3 支持，**且默认配置下就能弹表单**——`approval policy = OnRequest`、完全不配置 `mcp_elicitations` 时实测正常弹出 | 2026-09-14 实测：Codex Desktop 弹出模态表单，来源标注 `just-ask-me` |
-| Codex 会渲染表单吗 | ✅ **已实测原生渲染**：模态框 + 下拉选择 + 跳过/继续按钮 | 同上。「server 能发起 elicitation」与「客户端一定会渲染」仍是两件事，§13 保留了这个区分 |
-| Codex 的 granular 配置 | ⚠️ **通常不需要**，只在想显式**关闭** elicitation 时才用。真要写时有**必填**字段：`sandbox_approval`、`mcp_elicitations`、`rules`，少一个 Codex **拒绝加载整个 config.toml** | 本机实测：`missing field 'sandbox_approval'` / `missing field 'rules'` |
-
-> **本项目不依赖任何未证实的 API。** 所有 SDK 调用都按 1.30.0 的真实类型定义写，测试直接跑真 SDK 的 `Client` + `Server` 握手。
+不改 Codex 源码，不做网页 hack，不要求常驻 GUI。
 
 ---
 
-## 2. 目录结构
+## 安装（约 3 分钟）
 
-```
-JustAskMe/
-├── src/
-│   ├── index.ts          # stdio 入口：唯一的 stdout 消费者是 JSON-RPC transport
-│   ├── server.ts         # McpServer 组装 + 通过 initialize 下发的 instructions
-│   ├── tools.ts          # 5 个工具的注册 + 唯一的提问流水线 runQuestion()
-│   ├── elicitation.ts    # 封装 elicitInput，含能力探测与错误分类
-│   ├── forms.ts          # FormQuestion ⇄ MCP 受限 JSON Schema 的双向转换
-│   ├── http-form.ts      # fallback：127.0.0.1 一次性表单页
-│   ├── schemas.ts        # zod 输入 schema + 统一的输出 schema
-│   ├── outcome.ts        # 统一的 AskResult 状态机类型
-│   ├── config.ts         # HIM_* 环境变量 → ServerConfig
-│   └── logger.ts         # 只写 stderr 的日志 + console.log 重定向保险
-├── test/
-│   ├── helpers.ts        # 真 MCP Client/Server over InMemoryTransport
-│   ├── schema.test.ts    # schema round-trip / 工具定义 / 参数校验
-│   ├── choice.test.ts    # 正常回答路径（choice / confirm / text / multi_select）
-│   ├── cancel.test.ts    # decline / cancel / abort / 无能力降级
-│   ├── timeout.test.ts   # 超时与每调用覆盖
-│   └── fallback.test.ts  # loopback 表单页端到端（含 token 校验与自关闭）
-├── scripts/
-│   └── smoke-stdio.mjs   # 真实 stdio 子进程端到端冒烟（含 --manual 人工模式）
-├── docs/
-│   └── codex-config.example.toml
-├── AGENTS.md             # 给 Codex 的提问纪律（复制到你的项目根目录）
-├── package.json
-├── tsconfig.json
-└── tsconfig.test.json
-```
+**你需要**：
 
----
+- Windows + 已登录的 Codex CLI 或 Desktop
+- [Node.js](https://nodejs.org/) ≥ 20
+- [Python](https://www.python.org/downloads/) ≥ 3.10（仅安装器需要，装完不再用）
 
-## 3. 为什么选 TypeScript
-
-不是偏好问题，是成本问题：
-
-- MCP 官方 SDK 的 elicitation 支持最完整，且官方自带 `elicitationFormExample`；
-- Python SDK 要额外拉 `mcp[cli]` + `pydantic` + `anyio`，依赖面更大；
-- Codex 本身是 Node 生态，`node dist/index.js` 零包装即可被 `command`/`args` 拉起；
-- 运行时依赖只有 **2 个**：`@modelcontextprotocol/sdk`、`zod`。
-
----
-
-## 4. 安装
-
-### 4.1 作为 Codex 插件（推荐）
-
-本仓库本身就是一个 Codex 插件仓库，`plugins/just-ask-me/` 内含 MCP server 与
-`discuss-with-me`（讨论模式）技能。发布用的 server 是 esbuild 打包的**单文件**（已内联 SDK 与 zod），
-所以安装**不需要 `npm install`**，只需要 `PATH` 上有 Node ≥ 20。
+**整段复制进 PowerShell，回车：**
 
 ```powershell
-cd <本仓库>
+git clone https://github.com/EliotOK/JustAskMe.git
+cd JustAskMe
 .\Install.cmd
 ```
 
-`Install.cmd` 会调用 `install.py`，它做六件事：
-
-1. 检查 `%USERPROFILE%\.codex\config.toml`：若已有手工注册的 `[mcp_servers.human_input]`，
-   **直接终止**并说明原因（插件与手工注册并存会出现两份 `ask_*` 工具）；加 `--migrate`
-   则在装完后自动把该段**注释掉**（不删除，回滚即删掉注释块）；
-2. 把 `plugins/just-ask-me` 复制到 `~\plugins\just-ask-me`；
-3. 把 `.mcp.json` 里的裸 `node` **改写成这台机器的绝对路径**（这样插件不依赖子进程的 PATH）；
-4. 用官方 `plugin-creator` 助手更新 cachebuster 并校验；
-5. `codex plugin add just-ask-me@personal`；
-6. 迁移收尾：注释掉手工 server 段；`--migrate` 时还会把 `~\.codex\skills\discuss-with-me\`（或旧名 `discussion-mode\`）
-   手工副本**改名归档**为 `<名字>.bak-<时间戳>`（不删除）——插件内是更新的版本
-   （含「提问时机」一节、会话级持续生效）。
-
-装完**开新任务**验证两件事：`human_input_status` 只报告一套 `ask_*` 工具；`$discuss-with-me`
-是插件版（行为准则里含「提问时机」）。然后说一句「遇到需要我决定的地方就弹卡片问我」即可。
-
-### 4.2 手工接进已有的 `config.toml`
-
-不想用安装器的话，直接在 `%USERPROFILE%\.codex\config.toml` 里加：
-
-```toml
-[mcp_servers.human_input]
-command = "node"
-args = ["<本仓库克隆位置>\\dist\\index.js"]
-startup_timeout_sec = 30
-tool_timeout_sec = 600
-[mcp_servers.human_input.env]
-HIM_FALLBACK = "return"
-HIM_TIMEOUT_MS = "300000"
-```
-
-> 手工注册与插件是**二选一**：并存会注册两个同名 server，每个 `ask_*` 工具出现两份。
-> 之后想切到插件形态，跑 `.\Install.cmd --migrate` 即可自动迁移。
-
-### 4.3 从源码开发
+就这样。安装器会自动：注册插件、绑定本机的 Node 路径、检查有没有旧配置冲突。唯一需要加参数的情况——你以前**手工**在 `config.toml` 里配过本项目的 MCP server——那就改跑：
 
 ```powershell
-npm install
-npm run build          # tsc → dist/
-npm test               # 44 个单元测试
-npm run build:plugin   # esbuild → plugins/*/server/index.mjs
-npm run test:plugin    # 对打包产物跑 stdio 冒烟
-npm run verify         # 以上全套
+.\Install.cmd --migrate
 ```
 
-期望输出：`smoke test OK`，且每一项都是 `PASS`。
+它会自动注释掉旧配置并归档旧技能副本（不删除，可回滚）。
 
-> `npm run dev` 可以用 `tsx` 直接跑源码，免编译，但每次启动慢 ~300ms，日常开发用。
+> macOS / Linux：`python3 install.py`，效果等价。
+
+> 更懒的办法：把下面这句话直接发给 Codex，让它自己装——
+> 「从 GitHub 克隆 https://github.com/EliotOK/JustAskMe 并运行里面的 Install.cmd 把它装成你的插件」
+
+## 验证（30 秒）
+
+1. **重开一个 Codex 任务**（插件在新任务里生效）。
+2. 发送：`调用 human_input_status 工具看看`
+   看到 `client_supports_form_elicitation: true` 和五个工具 → 连接成功。
+3. 发送：`遇到需要我决定的地方就弹卡片问我。比如：用 pnpm 还是 npm？`
+   Codex 弹出带选项的表单，选一个提交，它拿着答案继续 → 完成。
+
+出问题了？直接翻下面的[常见故障](#常见故障)，绝大多数是一行解法。
+
+## 日常怎么用
+
+不需要记任何命令。Codex 遇到该问的事会自己弹卡片。想让它更主动地问你：
+
+- 说 **「讨论模式」** 或 **「边做边讨论」**——启用提问纪律：值得问的当场问、能自己查清的不烦你、答完立刻收束干活。
+- 说 **「快聊一下」「展开讨论」「挑战一下我的想法」「先收束」**——随时调整讨论深度。
+- 四个工具各管一摊：**选择**（`ask_choice`）、**是/否**（`ask_confirm`，破坏性操作前必用）、**填空**（`ask_text`）、**多选**（`ask_multi_select`）。细节见[工具参考](#工具参考)。
+
+卸载：`codex plugin remove just-ask-me@personal`，再删掉 `~\plugins\just-ask-me` 即可。
 
 ---
 
-## 5. Codex 接入
+## 常见故障
 
-### 5.1 写配置
+| 现象 | 处理 |
+| --- | --- |
+| `Install.cmd` 报 Python 相关错误 | 装官方 Python（python.org）后重跑；安装器会自动选对解释器，LibreOffice 等软件塞进 PATH 的残缺 Python 不会再被误用 |
+| agent 说"我问不了" / 收到 `declined` 但你没看到表单 | 客户端在自动拒绝。看返回里的 `auto_reject_suspected: true`；本项目已把它改报为 `needs_user_input`，agent 会在对话里直接问。也可临时设 `HIM_FALLBACK=http` 拿到网页表单 |
+| Codex 启动报 `failed to load configuration` / `missing field ...` | config.toml 的 `[approval_policy.granular]` 三个必填没写全（`sandbox_approval` / `mcp_elicitations` / `rules`）。**通常根本不用写这个块**——默认配置就能弹表单 |
+| `cannot extend value of type string with a dotted key` | 同时写了 `approval_policy = "..."` 和 `[approval_policy.granular]`。二选一 |
+| 表单弹出来了，提交却无效 | Codex 的 `tool_timeout_sec` 小于等待时间。设 600 以上，并 ≥ `HIM_TIMEOUT_MS/1000` |
+| 列表里没有 human_input 或 `disabled` | 路径不对。`node <那个路径>` 手动跑一下，出 `ready` 说明路径没问题 |
+| 表单弹了但浏览器没开（`http` 模式） | 无头环境。`HIM_HTTP_OPEN=0`，URL 仍会打到 stderr |
+| 模型从来不调这些工具 | 项目里没有提问纪律。把本仓库的 [AGENTS.md](AGENTS.md) 复制到你**项目**的根目录（见下） |
 
-把下面内容合并进 `%USERPROFILE%\.codex\config.toml`（完整注释版见 `docs/codex-config.example.toml`）：
+**验证排障三板斧**（按可靠性）：
 
-```toml
-# 【可选，多数情况不需要】实测（2026-09-14，codex-cli 0.144.3）：approval policy 保持
-# 默认 OnRequest、完全不配置 mcp_elicitations 时，表单已经能正常弹出。
-# 只有你想显式【关闭】elicitation 才需要下面这块。
-#
-# 真的要写的话注意两点：
-#   1) 这三个字段是必填，少任何一个 Codex 会拒绝加载整个 config.toml；
-#   2) 未列出的 skill_approval / request_permissions 会取默认 false，
-#      可能改变你现有的审批行为，别想当然地加上去。
-#
-# [approval_policy.granular]
-# sandbox_approval = true
-# mcp_elicitations = true
-# rules = true
-
-[mcp_servers.human_input]
-command = "node"
-args = ["<本仓库克隆位置>\\dist\\index.js"]
-startup_timeout_sec = 30
-tool_timeout_sec = 600          # 必须 >= HIM_TIMEOUT_MS/1000，否则表单还没提交就被掐
-[mcp_servers.human_input.env]
-HIM_FALLBACK = "return"
-HIM_TIMEOUT_MS = "300000"
-```
-
-**注意**：不要同时写 `approval_policy = "on-request"` 和 `[approval_policy.granular]`，TOML 会报 `cannot extend value of type string with a dotted key`。整块要么用 granular 表，要么用字符串，二选一。
-
-### 5.2 或者让 CLI 帮你写
-
-```powershell
-codex mcp add human_input `
-  --env HIM_FALLBACK=return `
-  --env HIM_TIMEOUT_MS=300000 `
-  -- node "<本仓库克隆位置>\dist\index.js"
-```
-
-`codex mcp add` 只写 `[mcp_servers.*]`，这就够了——granular 那一段是可选的（见 §5.1）。
-
-### 5.3 验证配置被读到
-
-```powershell
-codex mcp list
-```
-
-期望看到（实测输出）：
-
-```
-Name         Command  Args                                       Env             Status   Auth
-human_input  node     D:\...\dist\index.js                       HIM_FALLBACK=…  enabled  Unsupported
-```
-
-`Status = enabled` 说明注册成功。`Auth = Unsupported` 是正常的（stdio server 不需要 OAuth，这一列只对 HTTP server 有意义）。
-
-更细的诊断：
-
-```powershell
-codex doctor --json | Select-String 'mcp'
-```
-
-应包含 `"mcp servers": "1"`，以及：
-
-```
-"approval policy": "Granular(GranularApprovalConfig { sandbox_approval: true, rules: true,
-                     skill_approval: false, request_permissions: false, mcp_elicitations: true })"
-```
-
-`"mcp servers"` 的数字应随注册的 server 数量增加；`"config.toml parse": "ok"` 说明配置能被解析。
-
-**关于 `mcp_elicitations`**：如果 `approval policy` 显示为 `OnRequest`（没有 granular 块），说明你没配置它——**这是正常的**，实测表单照样弹出。只有在 policy 显示为 `Granular(... mcp_elicitations: false ...)` 时，Codex 才会静默拒绝所有 elicitation，表现为 agent 说"我问不了"。
-
-### 5.4 把提问纪律交给 Codex
-
-把 `AGENTS.md` 复制到你**项目仓库**的根目录（不是本项目的根目录）。内容见 §6。
+1. 让 agent 跑 `human_input_status`——服务端视角的真相；
+2. `codex mcp list` 看 `Status = enabled`；
+3. `node scripts/smoke-stdio.mjs` 绕开 Codex 直接测 server——它通则锅在 Codex 侧。
 
 ---
 
-## 6. AGENTS.md 规则
+## 工具参考
 
-完整内容在 `AGENTS.md`。摘录核心判断标准：
-
-> **只有在「决策价值 > 打断成本」时才提问。**
->
-> 该问：关键歧义 / 架构选择不可逆 / 多个方案同样合理靠偏好决定 / 删除覆盖迁移等破坏性操作 / 用户可见行为有真实取舍。
->
-> 不该问：小问题别频繁打断 / 能安全推断的自己定 / 能从仓库读出来的先读 / 答案不改变下一步的别问 / 问过的别重复问。
->
-> 拿不准的顺序：**先读代码 → 再按仓库既有约定推断 → 仍然影响重大且无法推断时才提问。**
-
-工具选择：2–5 个候选 → `ask_choice`；是/否 → `ask_confirm`；自由输入 → `ask_text`；选子集 → `ask_multi_select`。
-
-这套纪律同时也通过 MCP 的 `initialize.instructions` 下发（见 `src/server.ts`），所以即使你的仓库里没有 AGENTS.md，模型也能拿到基本规则。
-
----
-
-## 7. 工具参考
-
-所有 `ask_*` 返回**同一个结构**（`outputSchema` 已声明，客户端可用 `structuredContent` 直接解析）。
-
-### `ask_choice`
-
-| 输入 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `question` | string(1–2000) | ✅ | 直接问出来的那个问题，自带回答所需上下文 |
-| `options` | `{label, description?}[]`, 2–25 | ✅ | label 唯一；2–5 个最佳 |
-| `default` | string | | 推荐项，必须精确匹配某个 label |
-| `allow_free_text` | boolean | | 额外给一个自由文本输入框 |
-| `timeout_ms` | int(1000–3600000) | | 覆盖本次等待上限 |
-
-返回：`answer`/`selected` 为所选 label；`free_text` 为附加说明。
-
-### `ask_confirm`
-
-`question` ✅、`default?: boolean`、`timeout_ms?` → 返回 `confirmed: boolean`，同时 `answer` 为 `"yes"`/`"no"`。
-
-### `ask_text`
-
-`question` ✅、`placeholder?`、`default?`、`timeout_ms?` → 返回 `answer`（已 trim）。
-
-### `ask_multi_select`
-
-`question` ✅、`options` ✅(2–25)、`min?`、`max?`、`timeout_ms?` → 返回 `selected: string[]`，`answer` 为逗号连接。
-
-### `human_input_status`（诊断）
-
-`verbose?: boolean`。**不提问、不阻塞。** 用来确认：客户端是否声明了 elicitation、当前 fallback 模式、超时设置、工具清单。第 11 节的排查主要靠它。
-
----
-
-## 8. 返回状态矩阵
-
-**只有 `status: "answered"` 代表拿到了答案。**
+所有 `ask_*` 返回**同一个结构**（`outputSchema` 已声明）。**只有 `status: "answered"` 代表拿到了答案**：
 
 | `status` | 含义 | agent 应该做什么 |
 | --- | --- | --- |
-| `answered` | 用户回答了 | 用 `answer`/`selected`/`confirmed`/`free_text` 继续；不要重复问 |
+| `answered` | 用户回答了 | 用 `answer`/`selected`/`confirmed`/`free_text` 继续，不要重复问 |
 | `needs_user_input` | 表单**从未展示**给用户 | 把 `message` 里的问题和选项原样复述到对话里，等用户回复 |
 | `declined` | 用户拒绝回答 | **不要再问**。选最保守方案并声明假设，或报告需要决策 |
-| `cancelled` | 用户关掉了，或工具调用被 abort | 未回答 ≠ 许可。破坏性操作上不要猜 |
-| `timeout` | 限时内没人回答 | 别重复等同一题；改用对话提问或声明假设 |
-| `invalid_response` | 客户端答了但内容不可用 | 读 `message`（含原始内容/校验错误）后重问或声明假设 |
-| `unsupported` | 客户端不支持 elicitation 且 `HIM_FALLBACK=off` | 自行决断并显式说明假设 |
-| `error` | 参数非法或服务端异常 | 读 `message` 修正后重试 |
+| `cancelled` / `timeout` | 用户关掉 / 没人回答 | 未回答 ≠ 许可。破坏性操作上不要猜 |
+| `invalid_response` | 答了但内容不可用 | 读 `message` 后简化重问或声明假设 |
+| `unsupported` / `error` | 不支持 elicitation 且 fallback=off / 参数或服务端异常 | 读 `message` 与 `next_step` 照做 |
 
-另外两个辅助字段：
-- `client_elicitation` — 客户端是否声明了 `capabilities.elicitation.form`；
-- `auto_reject_suspected` — `decline` 回得太快（默认 <400ms），几乎可以断定是客户端**自动拒绝**而非用户点了"否"。此时 `status` 会被提升为 `needs_user_input`，而不是误报成用户的拒绝。
+辅助字段：`client_elicitation`（客户端是否声明 elicitation 能力）、`auto_reject_suspected`（`decline` 快于 400ms，几乎必然是客户端自动拒绝而非用户点否——此时状态会被提升为 `needs_user_input`）。
 
----
-
-## 9. Elicitation 不可用时会发生什么
-
-按 `HIM_FALLBACK` 三选一，**都不会破坏 MCP 消息流**：
-
-| 模式 | 行为 | 适用 |
+| 工具 | 输入要点 | 返回 |
 | --- | --- | --- |
-| `return`（默认） | 立刻返回 `needs_user_input`，附上完整问题与选项，让 Codex 在对话里直接问。**不阻塞。** | 通用默认；最安全 |
-| `http` | 在 `127.0.0.1` 随机端口起一个**一次性**表单页，URL 打到 stderr 并尝试打开浏览器，阻塞等待提交或超时，然后自动关闭 | 想要真正的结构化 UI 时显式开启 |
-| `off` | 返回 `isError: true` 的 `unsupported` 结果 | 非交互/CI 环境 |
+| `ask_choice` | `question` + 2–25 个 `{label, description?}`（2–5 个最佳）；`default` 须精确匹配某 label；`allow_free_text` 加备注框；`timeout_ms` 覆盖等待 | `answer`/`selected` 为所选 label |
+| `ask_confirm` | `question`（写清对象和后果）；`default?` | `confirmed: boolean`，`answer` 为 `"yes"`/`"no"` |
+| `ask_text` | `question`；`placeholder?` 格式提示；`default?` | `answer`（已 trim） |
+| `ask_multi_select` | `question` + `options`；`min?`/`max?` 数量边界 | `selected: string[]`，`answer` 逗号连接 |
+| `human_input_status` | `verbose?` | 能力/配置诊断，不提问不阻塞 |
 
-`http` 模式的安全属性：只绑 `127.0.0.1`、需要 128 位随机 token（constant-time 比较）、一题一实例用完即关、页面零外部资源（离线可用）。**它不是常驻 GUI。**
+## 给项目仓库加提问纪律（可选）
 
-> 为什么 fallback 用 HTTP 而不是终端提示？因为 stdio MCP server 的 stdin **就是** JSON-RPC 通道，读它或往 stdout 写提示都会破坏协议。loopback HTTP 是唯一完全不碰 MCP 消息流的 fallback。
+安装器已把提问纪律通过 MCP `initialize.instructions` 下发，模型开箱即知基本规则。想让**某个项目**里纪律更硬，把本仓库的 [AGENTS.md](AGENTS.md) 复制到那个项目根目录即可。核心判断标准：
 
----
+> **只有在「决策价值 > 打断成本」时才提问。**
+> 该问：关键歧义 / 不可逆的架构选择 / 方案同样合理靠偏好定 / 破坏性操作 / 用户可见行为有真实取舍。
+> 不该问：小问题 / 能推断的自己定 / 能从仓库读出来的先读 / 答案不影响下一步的别问 / 问过的别再问。
+> 拿不准的顺序：**先读代码 → 按仓库约定推断 → 仍影响重大才提问。**
 
-## 10. 测试
+## 配置与手工接入（想调才看）
 
-```powershell
-npm test                      # 44 个测试
-npx tsc -p tsconfig.test.json # 源码 + 测试全量类型检查
-node scripts/smoke-stdio.mjs  # 真实子进程 stdio 端到端
-node scripts/smoke-stdio.mjs --manual   # 人工模式：题目打到终端，你手动回答
-```
-
-覆盖情况：
-
-| 要求 | 位置 | 说明 |
-| --- | --- | --- |
-| schema validation test | `test/schema.test.ts` | 每个 schema 过一遍 SDK 自己的 `ElicitRequestFormParamsSchema.parse()` 并断言**深度相等**——SDK 是 `.strip()` 的，不相等就意味着字段正在被静默丢弃 |
-| choice response test | `test/choice.test.ts` | choice/confirm/text/multi_select 全部正常路径 + 越界 + 空值 |
-| cancel test | `test/cancel.test.ts` | decline / cancel / **abort 必须归类为 cancelled 而非 timeout** / 无能力降级 |
-| timeout test | `test/timeout.test.ts` | 配置超时、每调用覆盖，并断言实测耗时远小于 SDK 的 60s 默认值 |
-| fallback test | `test/fallback.test.ts` | 真起 HTTP、真发请求、token 校验返回 403、提交后返回答案、超时后端口不再监听 |
-| 人工 smoke test | `scripts/smoke-stdio.mjs` | 见上，`--manual` 会真的把表单题目打到终端等你输入 |
-
-测试用的是**真** MCP `Client` 和 `Server`，通过 `InMemoryTransport.createLinkedPair()` 相连，只把"人"换成脚本。
-
----
-
-## 11. 如何确认 Codex 真的调用了 MCP tool
-
-按可靠性从高到低：
-
-1. **看 server 的 stderr。** 把 `HIM_LOG=debug` 写进 `[mcp_servers.human_input.env]`，然后 Codex 运行时你会在终端看到：
-   ```
-   [just-ask-me] info: ready (log=debug, fallback=return, timeout=300000ms, ...)
-   [just-ask-me] debug: elicitation/create resolved in 13ms: accept
-   ```
-   没看到 `ready` = server 没起来；看到 `ready` 但没有 `elicitation/create` = **模型没调这个工具**，是提示词/AGENTS.md 的问题，不是连接问题。
-
-2. **让 agent 调 `human_input_status`。** 直接在 Codex 里说「调用 human_input_status 看看」。它的输出会告诉你客户端能力、fallback 模式、超时值——这是唯一能确认"服务端视角看到了什么"的办法。
-
-3. **`codex doctor --json`** 确认配置层：`"mcp servers": "1"` 且 `mcp_elicitations: true`。
-
-4. **`codex mcp list`** 确认注册层：`Status = enabled`。
-
-5. **独立排除 Codex**：`node scripts/smoke-stdio.mjs`。它跑通说明 server 本身没问题，锅在 Codex 侧配置或提示词。
-
----
-
-## 12. 常见故障
-
-| 现象 | 原因 | 处理 |
-| --- | --- | --- |
-| agent 说"我问不了用户" / 直接自己猜 | 若 policy 是 `Granular(... mcp_elicitations: false ...)`，Codex 静默自动拒绝 | 改成 `true`，或用 `codex doctor --json` 先看当前 policy 是不是 granular |
-| 用户没看到表单，agent 却收到 `declined` | 客户端自动拒绝（未把 elicitation 弹给用户） | 看 `auto_reject_suspected: true`；本项目已把这种情况改报为 `needs_user_input`，不会误导 agent。也可临时把 `HIM_FALLBACK` 改成 `http` 拿到结构化 UI |
-| Codex 启动就报 `failed to load configuration` / `missing field ...` | granular 三个必填字段没写全 | 补 `sandbox_approval` / `mcp_elicitations` / `rules` |
-| `cannot extend value of type string with a dotted key` | 同时写了 `approval_policy = "..."` 和 `[approval_policy.granular]` | 二选一 |
-| 表单弹出来了，提交却无效/报错 | Codex 的 `tool_timeout_sec` 小于等待时间，`tools/call` 被提前掐断 | `tool_timeout_sec` 设 600 或更大，并保证 ≥ `HIM_TIMEOUT_MS/1000` |
-| `Status = disabled` 或列表里没有 | 路径写错 / 没 `npm run build` | `node <那个路径>` 手动跑一下，能出 `ready` 说明路径对 |
-| stdout 出现非 JSON 内容导致连接断开 | 有代码往 stdout 写日志 | 本项目已把 `console.log/info/debug/warn` 全部重定向到 stderr（`src/logger.ts`）；`HIM_STRICT_STDOUT=0` 可关掉这层保险 |
-| 用户没看到表单，agent 却收到 `declined` | 客户端自动拒绝 elicitation | 看 `auto_reject_suspected: true`；本项目已把这种情况改报为 `needs_user_input`，不会误导 agent |
-| 模型从来不调这些工具 | 提示词里没有提问纪律 | 把 `AGENTS.md` 放到项目根目录 |
-| 选项描述没显示 | MCP form schema 不支持 per-option description | 本项目已把描述**内联进 `message`**（`1. label — description`），客户端看不到结构化描述也不丢信息 |
-| `http` fallback 起了页面但浏览器没开 | 无头/远程环境 | `HIM_HTTP_OPEN=0` 关掉自动打开，URL 仍会打到 stderr |
-
----
-
-## 13. API 覆盖与已知不确定
-
-诚实边界：
-
-**已实测确认（本机）**
-- SDK 1.30.0 的 `elicitInput` 存在且行为如 §1 所述；
-- 客户端未声明能力时 SDK 会先 throw，本项目已前置探测 + 兜底分类；
-- 本项目生成的每个 `requestedSchema` 都能通过 SDK 自己的 schema 校验且**无字段被 strip**（round-trip 测试）；
-- server 能以 stdio 被真实客户端拉起、握手、收发 `elicitation/create`（`scripts/smoke-stdio.mjs`）；
-- Codex 0.144.3 能解析配置、注册 server（`codex mcp list` 显示 `enabled`）；
-- **Codex Desktop 会原生渲染 elicitation 表单**（2026-09-14 实测）：`ask_choice` 弹出模态框，含 `Options:` 列表、下拉选择、跳过/继续按钮，来源标注 `just-ask-me`；
-- **在 `approval policy = OnRequest`（非 granular、未配置 `mcp_elicitations`）下表单照样弹出**，即那个开关不是必需的；
-- 选项的描述文本如期出现在 `message` 正文里（确认了「per-option description 不可表达、必须内联」这个设计判断）。
-
-**未验证 / 不确定**
-- **Codex 对 `array` 类型字段的渲染质量**（即 `ask_multi_select`）。理论上渲染成多选控件，尚未实测。若不理想：`HIM_MULTISELECT_MODE=text` 会把它降级成一个逗号分隔的文本框，解析逻辑已实现并测试。
-- **`ask_confirm` 的布尔字段渲染**。理论上渲染成是/否控件，尚未实测。
-- **Codex 对 `enumNames` 的支持**。本项目同时发 `enum` 和 `enumNames`（值相同），即使被忽略也不影响正确性。
-- **`number`/`integer` 字段**本项目**完全不用**。有公开 issue 反映 Codex 会把数值型 elicitation 字段降级成审批提示并提交空内容，所以所有 schema 只用 string/boolean/array-of-enum。
-
-**已知的设计取舍**
-- 越界选项值在 elicitation 路径上会被 SDK 的 Ajv 拦下并变成 `invalid_response`（拿不到用户原话，因为异常里不含原始值）。这正是 `allow_free_text` 存在的意义：用它是让用户回答"你没预料到的选项"的**受支持**方式。
-- `ask_multi_select` 的 `choices` 字段**故意不设为 required**，这样空选会走到本项目自己的边界检查，给出可读的错误而不是死在 SDK 校验里。
-
----
-
-## 14. 环境变量
+环境变量（写进 `[mcp_servers.human_input.env]`）：
 
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
 | `HIM_TIMEOUT_MS` | `300000` | 单题等待上限（1000–3600000） |
-| `HIM_FALLBACK` | `return` | `return` \| `http` \| `off` |
-| `HIM_HTTP_OPEN` | `1` | `http` 模式是否自动打开浏览器 |
-| `HIM_HTTP_HOST` | `127.0.0.1` | **不要改成 0.0.0.0** |
-| `HIM_HTTP_PORT` | `0` | 0 = 随机空闲端口 |
-| `HIM_MULTISELECT_MODE` | `array` | `array` \| `text` |
+| `HIM_FALLBACK` | `return` | `return` \| `http` \| `off`，见下 |
+| `HIM_HTTP_OPEN` / `HIM_HTTP_HOST` / `HIM_HTTP_PORT` | `1` / `127.0.0.1` / `0` | `http` 回退的浏览器/绑定/端口；**不要改成 0.0.0.0** |
+| `HIM_MULTISELECT_MODE` | `array` | `text` 可降级为逗号分隔输入 |
 | `HIM_AUTO_REJECT_MS` | `400` | 快于此值的 `decline` 判定为客户端自动拒绝 |
-| `HIM_LOG` | `info` | `silent` \| `error` \| `warn` \| `info` \| `debug`，全部走 stderr |
-| `HIM_STRICT_STDOUT` | `1` | `0` = 关闭 `console.log` → stderr 的重定向保险 |
+| `HIM_LOG` | `info` | 日志级别，全部走 stderr |
+| `HIM_STRICT_STDOUT` | `1` | `0` = 关闭 console→stderr 重定向保险 |
 
-命令行也支持 `-c` 覆盖，例如仅临时调：
+**回退三模式**（客户端不支持 elicitation 时）：`return`（默认）把问题原样交还 agent 在对话里问，不阻塞；`http` 起一个 `127.0.0.1` 上的一次性表单页（128 位随机 token、用完即关、零外部资源）；`off` 直接报错。为什么用 HTTP 而不是终端提示？stdio 的 stdin 就是 JSON-RPC 通道，动它必坏协议——loopback HTTP 是唯一完全不碰消息流的回退。
 
-```powershell
-codex -c 'mcp_servers.human_input.env.HIM_LOG="debug"' 
+**手工接入**（不想用插件安装器）：在 `%USERPROFILE%\.codex\config.toml` 加：
+
+```toml
+[mcp_servers.human_input]
+command = "node"
+args = ["<本仓库克隆位置>\\dist\\index.js"]
+startup_timeout_sec = 30
+tool_timeout_sec = 600          # 必须 >= HIM_TIMEOUT_MS/1000
+[mcp_servers.human_input.env]
+HIM_FALLBACK = "return"
+HIM_TIMEOUT_MS = "300000"
 ```
+
+完整注释版见 `docs/codex-config.example.toml`。**手工注册与插件二选一**：并存会出现两份 `ask_*` 工具；想切到插件形态，跑 `.\Install.cmd --migrate`。
+
+**从源码开发**：`npm install && npm run verify`（typecheck + 44 个单元测试 + 打包 + 冒烟，期望 `smoke test OK`）。测试用真 MCP `Client`/`Server` 经 `InMemoryTransport` 相连，只把"人"换成脚本；另有 `node scripts/smoke-stdio.mjs --manual` 人工模式。
 
 ---
 
-## 15. 许可
+## 附录 A：MCP elicitation 事实核查
+
+网上教程很多在细节上是错的，以下每条都在本机实测过：
+
+| 事项 | 结论 |
+| --- | --- |
+| MCP SDK 支持 elicitation？ | ✅ `@modelcontextprotocol/sdk@1.30.0` 的 `elicitInput(params, options)` |
+| 返回结构 | `{ action: 'accept'\|'decline'\|'cancel', content? }`（`ElicitResultSchema`） |
+| form 模式字段 | 只支持扁平原始类型：string / boolean / number / integer / array-of-enum |
+| SDK 会静默丢字段吗 | ⚠️ 会。`properties` 走 Zod union + `.strip()`，未知键被丢掉而非报错；`test/schema.test.ts` 用 round-trip 深度相等断言把此事变成会失败的测试 |
+| 客户端没声明能力时 | ⚠️ `elicitInput()` 直接 throw，不会发出去。本项目前置探测 + 对该 throw 兜底分类 |
+| 默认超时 | ⚠️ 60 秒。人类读题不止 60 秒，本项目始终显式传 `timeout`（默认 300s） |
+| SDK 会校验用户回答吗 | ⚠️ 会（Ajv）。越界选项抛 `McpError(InvalidParams)`，到不了本项目代码——所以有 `allow_free_text` |
+| 取消能传递到 server 吗 | ✅ 客户端 abort → `notifications/cancelled` → `extra.signal` 被 abort |
+| Codex CLI 支持 elicitation 吗 | ✅ 0.144.3 实测支持，**默认配置就能弹表单**；granular 的 `mcp_elicitations` 块通常不需要 |
+| Codex 会渲染表单吗 | ✅ 实测原生渲染：模态框 + 选项 + 跳过/继续，来源标注 `just-ask-me` |
+
+## 附录 B：已实测与未验证的边界
+
+**已实测**：schema round-trip 无字段被 strip；stdio 被真实客户端拉起并完成 `elicitation/create` 往返；Codex Desktop 原生渲染 `ask_choice` 表单；`OnRequest` 策略下无需配置 `mcp_elicitations`；选项描述内联进 `message` 后如期显示。
+
+**未验证**：Codex 对 `array` 字段（`ask_multi_select`）与布尔字段（`ask_confirm`）的渲染质量——若不理想，`HIM_MULTISELECT_MODE=text` 可降级；`enumNames` 是否被 Codex 采用（被忽略也不影响正确性）。详细验证记录见 [VALIDATION.md](VALIDATION.md)。
+
+**已知取舍**：数字字段完全不用（Codex 有公开问题会把数值 elicitation 字段降级成审批提示）；`ask_multi_select` 故意不设 required，让空选走本项目自己的可读报错而非 SDK 校验；越界选项在 elicitation 路径上拿不到用户原话（Ajv 异常不含原始值），这正是 `allow_free_text` 的存在意义。
+
+## 附录 C：仓库结构
+
+```
+JustAskMe/
+├── src/                  # index(入口) server(tools+instructions) tools(提问流水线)
+│                         # elicitation(能力探测) forms(schema 转换) http-form(回退页)
+│                         # schemas/outcome(统一状态) config(HIM_* env) logger(stderr)
+├── test/                 # 44 个单元测试：schema 往返 / 四工具 / 取消归类 / 超时 / HTTP 回退端到端
+├── scripts/smoke-stdio.mjs   # 真实 stdio 子进程冒烟（--manual 人工模式）
+├── plugins/just-ask-me/  # 发布产物：单文件 server（内联全部依赖）+ discuss-with-me 技能
+├── docs/codex-config.example.toml
+└── AGENTS.md             # 提问纪律（复制到你的项目根目录）
+```
+
+为什么是 TypeScript：MCP 官方 SDK 的 elicitation 支持最完整；Codex 是 Node 生态，`node` 零包装拉起；运行时依赖只有 `@modelcontextprotocol/sdk` 和 `zod` 两个。
+
+---
+
+## 许可
 
 MIT。
