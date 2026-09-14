@@ -55,3 +55,9 @@
 - `invalid_response` / `unsupported` / `error` — 阅读 `message` 和 `next_step` 并照做。
 
 **永远不要**因为拿不到答案就默默假定一个值然后继续——尤其在删除、覆盖、迁移类操作上。
+
+## 技能正典同步
+
+`plugins/just-ask-me/skills/discuss-with-me/SKILL.md` 是 discuss-with-me 技能的**唯一正典**；
+`~/.agents/skills/discuss-with-me/SKILL.md` 是运行副本（供 Codex 之外的宿主扫描，与插件内副本
+同名遮蔽）。修改技能内容时只改正典，然后整体复制到运行副本——两份不一致时，宿主可能加载到旧版。
