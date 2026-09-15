@@ -1,5 +1,7 @@
 # JustAskMe
 
+[English](README.en.md)
+
 让 **Codex** 遇到需要你拍板的事时，弹出结构化表单等你回答——选择题、是/否确认、填空、多选，答完它再继续干活。体验对标 Claude Code 的 `AskUserQuestion`，但属于 Codex。
 
 不改 Codex 源码，不做网页 hack，不要求常驻 GUI。
@@ -11,7 +13,7 @@
 **你需要**：
 
 - Windows + 已登录的 Codex CLI 或 Desktop
-- [Node.js](https://nodejs.org/) ≥ 20
+- [Node.js](https://nodejs.org/) ≥ 20.11.0
 - [Python](https://www.python.org/downloads/) ≥ 3.10（仅安装器需要，装完不再用）
 
 **整段复制进 PowerShell，回车：**
@@ -22,15 +24,15 @@ cd JustAskMe
 .\Install.cmd
 ```
 
-就这样。安装器会自动：注册插件、绑定本机的 Node 路径、检查有没有旧配置冲突。唯一需要加参数的情况——你以前**手工**在 `config.toml` 里配过本项目的 MCP server——那就改跑：
+就这样。安装器会自动：注册插件、绑定本机的 Node 路径、检查有没有旧配置冲突。如果检测到旧插件、手工 MCP 注册或本项目的旧技能副本，改跑：
 
 ```powershell
 .\Install.cmd --migrate
 ```
 
-它会自动注释掉旧配置并归档旧技能副本（不删除，可回滚）。
+安装器自包含，不依赖本机的 plugin-creator 辅助脚本。它先准备并检查新版本，再切换注册；迁移会注释旧 MCP 配置，将旧技能移到扫描目录之外。恢复副本保存在 `$CODEX_HOME/just-ask-me-backups/`（默认 `~/.codex/just-ask-me-backups/`）。失败时尝试恢复文件与注册；若 CLI 恢复失败，会明确报告并保留备份。旧插件源目录保留。含多行字符串的 TOML 配置需手动迁移，安装器会在写入前停止。
 
-> macOS / Linux：`python3 install.py`，效果等价。
+> macOS / Linux 使用 `python3 install.py`；本次自动验收在 Windows 完成，其他系统仍需实机验证。
 
 > 更懒的办法：把下面这句话直接发给 Codex，让它自己装——
 > 「从 GitHub 克隆 https://github.com/EliotOK/JustAskMe 并运行里面的 Install.cmd 把它装成你的插件」
@@ -74,24 +76,25 @@ cd JustAskMe
 
 1. 让 agent 跑 `human_input_status`——服务端视角的真相；
 2. `codex mcp list` 看 `Status = enabled`；
-3. `node scripts/smoke-stdio.mjs` 绕开 Codex 直接测 server——它通则锅在 Codex 侧。
+3. `node scripts/smoke-stdio.mjs` 绕开 Codex 直接测 server——通过说明协议链路可用；真实客户端界面、等待和通知仍需单独验证。
 
 ---
 
 ## 工具参考
 
-所有 `ask_*` 返回**同一个结构**（`outputSchema` 已声明）。**只有 `status: "answered"` 代表拿到了答案**：
+所有 `ask_*` 返回**同一个结构**（`outputSchema` 已声明）。**`answered` 表示提交了答案，`discussion` 表示提交了仅含自由文字的回复**：
 
 | `status` | 含义 | agent 应该做什么 |
 | --- | --- | --- |
 | `answered` | 用户回答了 | 用 `answer`/`selected`/`confirmed`/`free_text` 继续，不要重复问 |
-| `needs_user_input` | 表单**从未展示**给用户 | 把 `message` 里的问题和选项原样复述到对话里，等用户回复 |
+| `discussion` | 用户仅提交自由文字 | 先解释追问；若文字已明确决定，直接采用 |
+| `needs_user_input` | 尚未取得可用表单答案 | 把 `message` 里的问题和选项原样复述到对话里，等用户回复 |
 | `declined` | 用户拒绝回答 | **不要再问**。选最保守方案并声明假设，或报告需要决策 |
 | `cancelled` / `timeout` | 用户关掉 / 没人回答 | 未回答 ≠ 许可。破坏性操作上不要猜 |
 | `invalid_response` | 答了但内容不可用 | 读 `message` 后简化重问或声明假设 |
 | `unsupported` / `error` | 不支持 elicitation 且 fallback=off / 参数或服务端异常 | 读 `message` 与 `next_step` 照做 |
 
-辅助字段：`client_elicitation`（客户端是否声明 elicitation 能力）、`auto_reject_suspected`（`decline` 快于 400ms，几乎必然是客户端自动拒绝而非用户点否——此时状态会被提升为 `needs_user_input`）。
+辅助字段：`client_elicitation`（客户端是否声明 elicitation 能力）、`auto_reject_suspected`（`decline` 快于 400ms，可能是客户端自动拒绝，耗时不能证明用户是否看到或拒绝——此时状态会被提升为 `needs_user_input`）。
 
 | 工具 | 输入要点 | 返回 |
 | --- | --- | --- |
@@ -209,3 +212,16 @@ JustAskMe/
 ## 许可
 
 MIT。
+
+
+## 自由回答与发布验证
+
+`ask_choice` 开启 `allow_free_text` 后，用户可只填写文字，不必选择预设方案。
+仅文字返回 `discussion`；有选项的提交仍返回 `answered`。模型应结合完整文字理解回复，
+先处理追问和“暂不执行”等限制，不能把任一提交自动视为操作授权。
+HTTP 备用表单会按多选数量校验；无效提交保留页面和已填内容，修正后可继续提交。
+
+开发验证：`npm ci`、`npx playwright install chromium`、`npm run verify`。
+其中安装器测试使用临时用户目录及模拟 CLI，浏览器测试使用真实 Chromium。
+这些测试不代替真实 Codex 的新用户安装、卡片展示、长时间等待和桌面通知验收。
+通知及客户端允许的最长等待时间受 Codex 和操作系统配置影响，本插件不保证一定弹出系统通知。

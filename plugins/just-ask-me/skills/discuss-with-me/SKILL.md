@@ -92,16 +92,17 @@ JustAskMe 的 `ask_*` 工具（若当前环境提供）**全部是同步的**：
 - 是/否决策或破坏性操作授权 → `ask_confirm`。
 - 无法枚举的开放信息 → `ask_text`。
 - 需选一个子集 → `ask_multi_select`。
-- 选项尚需解释、用户可能想追问时，把 `allow_free_text` 设为 `true`，并**不要**另造“其他”选项——那正是界面自带的自由输入。
+- 选项尚需解释、用户可能想追问时，把 `allow_free_text` 设为 `true`。用户可以不选预设方案，直接填写问题或自己的答案；无需另造“其他”选项。
 
-这些工具的返回比一般情况更确定，据此判断而非继续保守表述：
+按返回内容判断下一步；协议返回不独立证明客户端实际显示过界面：
 
-- `answered` 且 `via: "elicitation"`：卡片确实显示了、用户确实提交了，`selected` / `free_text` / `confirmed` 就是实际内容，直接采用。
-- `needs_user_input`：卡片**没有**显示给用户。不要重试工具（重试仍会失败），改用普通消息提出同一问题并结束本轮；返回的 `message` 已按原样备好题面和选项，直接复述即可。
+- `answered`：结合 `selected` / `free_text` / `confirmed` 理解完整提交。自由文本中的追问、否定或执行限制不能被选项覆盖。`via: "elicitation"` 说明来自 MCP 客户端响应。
+- `discussion`：收到仅包含自由文本的回复，尚未选定预设方案。先读取 `free_text`；若是追问就先解释，若已明确表达决定就直接采用，不要求重新点选。
+- `needs_user_input`：未取得可用的表单答案，是否显示过取决于失败原因。不要立即重复工具调用，改用普通消息提出同一问题并结束本轮；返回的 `message` 已按原样备好题面和选项，直接复述即可。
 - `declined`：用户明确拒绝，不要重复提问。
 - `cancelled` / `timeout`：未提交，按本节“不是确认”处理，不得据此推进依赖该选择的工作。
 - `invalid_response`：`message` 含原因；可简化题目后重问一次。
-- `auto_reject_suspected: true`：是客户端自动拒绝而非用户拒绝；按 `needs_user_input` 处理，不要当成用户说了“不”。
+- `auto_reject_suspected: true`：只是根据响应耗时推测客户端自动拒绝，不能证明用户未看到或未拒绝。若用户明确拒绝，应尊重拒绝；否则按 `needs_user_input` 处理。
 
 <!-- 正典副本：本文件是 discuss-with-me 的唯一内容来源。
      另一份运行副本位于 ~/.agents/skills/discuss-with-me/SKILL.md（供 Codex 之外的宿主扫描），

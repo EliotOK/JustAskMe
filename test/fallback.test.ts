@@ -148,7 +148,7 @@ describe('http fallback', () => {
     }
   });
 
-  it('reports invalid_response when the form is submitted empty', async () => {
+  it('keeps the form available after an invalid submission', async () => {
     const captured = captureStderr();
     const harness = await startHarness({
       capabilities: {},
@@ -170,12 +170,13 @@ describe('http fallback', () => {
       pending.catch(() => undefined);
 
       const url = await waitForUrl(captured.lines);
-      await submit(url, { cancelled: false, values: {} });
-
+      const invalid = await submit(url, { cancelled: false, values: {} });
+      assert.equal(invalid.status, 422);
+      assert.equal((await fetch(url)).status, 200);
+      await submit(url, { values: { choices: ['windows'] } });
       const result = asAskResult(await pending);
-      assert.equal(result.status, 'invalid_response');
-      assert.equal(result.via, 'http_form');
-      assert.match(result.message, /at least 1 selection/);
+      assert.equal(result.status, 'answered');
+      assert.deepEqual(result.selected, ['windows']);
     } finally {
       captured.restore();
       await harness.close();
@@ -206,7 +207,7 @@ describe('http fallback', () => {
 
       const url = await waitForUrl(captured.lines);
       const page = await (await fetch(url)).text();
-      assert.match(page, /name="choices" value="windows" required/);
+      assert.match(page, /name="choices" value="windows">/);
       assert.match(page, /type="checkbox"/);
 
       await submit(url, { cancelled: false, values: { choices: ['windows', 'macos'] } });

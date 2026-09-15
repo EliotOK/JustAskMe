@@ -221,3 +221,19 @@ best-effort `codex plugin remove` 后清理目录和条目。插件版技能的�
 
 - `codex plugin remove` 的真实执行在真机迁移时验证；
 - 改名后的 Codex 弹窗来源标注应显示 `just-ask-me`，待用户实测确认。
+
+
+## 0.3.0 — 2026-09-15
+
+Windows / Node 24.15.0 / Python 3.13，`npm run verify` 通过：
+
+- TypeScript 类型检查、编译及插件单文件构建。
+- 46 项协议与单元测试，包括仅文字回复的 MCP 往返。
+- 打包后的服务端 stdio 冒烟测试。
+- 8 项隔离安装测试：独立安装、重复安装、显式迁移、失败恢复、自定义 CODEX_HOME、技能归档、TOML 子表和 Node 版本检查。
+- 4 项真实 Chromium 表单测试：单项提交、超限修正、允许零项、空回复修正为仅文字回复。
+
+安装器自动测试使用模拟 CLI。随后在 Windows 本机通过真实 Codex CLI 完成 0.3.0 安装；
+安装缓存的服务端和技能与源码一致，已安装文件的冒烟测试通过。重启后
+`human_input_status` 返回 0.3.0，并报告 form elicitation 支持；本机试用反馈验证正常。
+长时间等待、系统通知及 macOS/Linux 安装尚无单独验收记录。

@@ -1,6 +1,6 @@
 {
   "name": "just-ask-me",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "让 Codex 主动向用户发起结构化提问并阻塞等待回答，附带 discuss-with-me（讨论模式）技能。",
   "author": {
     "name": "EliotOK",

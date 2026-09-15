@@ -1,304 +1,229 @@
-"""Install the packaged plugin into this user's personal Codex marketplace.
-
-Mirrors the flow used by the sibling `codex-turn-meter-package` repo:
-
-  1. scaffold a personal-marketplace entry (via the official plugin-creator helper)
-  2. copy `plugins/just-ask-me` into `~/plugins/just-ask-me`
-  3. rewrite the bare `node` in `.mcp.json` to this machine's absolute Node path
-  4. bump the cachebuster, validate, and register the plugin
-  5. migrate away conflicting manual registrations (with `--migrate`)
-
-The plugin declares the same MCP server key (`human_input`) and the same skill
-name (`discuss-with-me`, legacy `discussion-mode`) that a hand-written `config.toml` / `~/.codex/skills`
-setup uses. Running both registrations at once means duplicated `ask_*` tools,
-so the installer refuses to install over a live manual server entry unless
-`--migrate` is passed; migration comments the TOML section out (never deletes)
-and archives the manual skill directory (never deletes).
-
-Python 3.10+ is required because it drives the plugin-creator helper scripts.
-"""
+"""Install JustAskMe with staged files and recoverable configuration backups."""
+import argparse
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
-import time
+import tempfile
+import uuid
 from pathlib import Path
 
 PLUGIN_NAME = 'just-ask-me'
-LEGACY_PLUGIN_NAME = 'codex-human-input-mcp'  # pre-0.2.0 installs
+LEGACY_PLUGIN_NAME = 'codex-human-input-mcp'
 SERVER_KEY = 'human_input'
-SKILL_NAME = 'discuss-with-me'
-LEGACY_SKILL_NAME = 'discussion-mode'  # pre-0.1.1 plugin/manual copies
-
-# A TOML table header that belongs to our server: the server table itself and
-# any of its sub-tables (`[mcp_servers.human_input.env]`, ...).
-OURS_HEADER = re.compile(r'^\[mcp_servers\.%s(?:\.[^\]]+)?\]' % re.escape(SERVER_KEY))
-ANY_HEADER = re.compile(r'^\[')
-MIGRATION_BEGIN = '# >>> codex-human-input-mcp migration (%s): manual server disabled, plugin replaces it'
-MIGRATION_END = '# <<< codex-human-input-mcp migration'
+SKILL_NAMES = ('discuss-with-me', 'discussion-mode')
 
 
-def find_server_section(lines):
-    """Line indices covered by `[mcp_servers.human_input*]` tables, or None."""
-    span = None
-    bounded = False  # an unrelated header was found after the section
-    for index, line in enumerate(lines):
-        if span is None:
-            if OURS_HEADER.match(line):
-                span = [index, index]
-        elif ANY_HEADER.match(line) and not OURS_HEADER.match(line):
-            span[1] = index - 1
-            bounded = True
-            break
-    if span is None:
-        return None
-    if not bounded:
-        # No unrelated header followed: the section runs to EOF. (Sub-tables
-        # like `.env` match OURS_HEADER, so they never bound the span.)
-        span[1] = len(lines) - 1
-    # Trim trailing blank lines so they stay outside the commented block.
-    end = span[1]
-    while end > span[0] and lines[end].strip() == '':
-        end -= 1
-    return [span[0], end]
+def write_json(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + '.tmp-' + uuid.uuid4().hex)
+    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    temporary.replace(path)
 
 
-def comment_out_server_section(config_path):
-    lines = config_path.read_text(encoding='utf-8').splitlines()
-    if any(MIGRATION_BEGIN.split('(')[0] in line for line in lines):
-        print(f'  {config_path}: already migrated, leaving as is')
-        return
-    span = find_server_section(lines)
-    if span is None:
-        return
-    start, end = span
-    block = [MIGRATION_BEGIN % time.strftime('%Y-%m-%d')]
-    block += ['# ' + line for line in lines[start:end + 1]]
-    block.append(MIGRATION_END)
-    lines[start:end + 1] = block
-    config_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
-    print(f'  {config_path}: commented out [mcp_servers.{SERVER_KEY}] (lines {start + 1}-{end + 1}); '
-          'delete the block to roll back')
-
-
-def migrate_legacy_plugin(home, codex):
-    """Best-effort removal of pre-0.2.0 installs registered under the old name."""
-    legacy_target = home / 'plugins' / LEGACY_PLUGIN_NAME
-    marketplace = home / '.agents/plugins/marketplace.json'
-    entry_exists = False
-    if marketplace.is_file():
+def server_lines(text):
+    """Find server tables, including quoted keys and separated subtables."""
+    key = r'(?:human_input|"human_input"|\'human_input\')'
+    header = re.compile(r'^\s*\[\s*(?:mcp_servers|"mcp_servers"|\'mcp_servers\')\s*\.\s*' + key + r'\s*(?:\.|\])')
+    if chr(34) * 3 in text or chr(39) * 3 in text:
         try:
-            entries = json.loads(marketplace.read_text(encoding='utf-8')).get('plugins', [])
-            entry_exists = any(p.get('name') == LEGACY_PLUGIN_NAME for p in entries)
-        except (json.JSONDecodeError, OSError):
-            pass
-    if not legacy_target.exists() and not entry_exists:
-        return
-    print(f'Migrating legacy {LEGACY_PLUGIN_NAME} install:')
-    subprocess.run(
-        [codex, 'plugin', 'remove', f'{LEGACY_PLUGIN_NAME}@personal'],
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    if legacy_target.exists():
-        shutil.rmtree(legacy_target)
-        print(f'  removed {legacy_target}')
-    legacy_cache = home / '.codex' / 'plugins' / 'cache' / 'personal' / LEGACY_PLUGIN_NAME
-    if legacy_cache.exists():
-        try:
-            shutil.rmtree(legacy_cache)
-            print(f'  removed {legacy_cache}')
-        except OSError as error:
-            print(
-                f'  NOTE: could not remove {legacy_cache} ({error.strerror}). A running Codex '
-                'process still holds it; close Codex and delete that directory manually.'
-            )
-    if entry_exists:
-        data = json.loads(marketplace.read_text(encoding='utf-8'))
-        data['plugins'] = [p for p in data.get('plugins', []) if p.get('name') != LEGACY_PLUGIN_NAME]
-        marketplace.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-        print(f'  dropped {LEGACY_PLUGIN_NAME} from {marketplace}')
+            import tomllib
+        except ImportError:
+            raise ValueError('Python 3.11+ is required to inspect multiline TOML safely.')
+        parsed = tomllib.loads(text)
+        if SERVER_KEY not in parsed.get('mcp_servers', {}):
+            return []
+        raise ValueError('Multiline TOML strings require manual migration; configuration was not modified.')
+    active = False
+    indices = []
+    for i, line in enumerate(text.splitlines()):
+        if re.match(r'^\s*\[', line):
+            active = bool(header.match(line))
+        if active:
+            indices.append(i)
+    return indices
 
 
-def check_manual_server(home, migrate):
-    """Refuse to install over a live manual `human_input` server registration."""
-    config_path = home / '.codex' / 'config.toml'
-    if not config_path.is_file():
-        return
-    span = find_server_section(config_path.read_text(encoding='utf-8').splitlines())
-    if span is None:
-        return
-    if not migrate:
-        raise SystemExit(
-            f'{config_path} already registers an [mcp_servers.{SERVER_KEY}] server '
-            f'(line {span[0] + 1}). Installing the plugin on top would register the same '
-            'server twice and duplicate every ask_* tool.\n'
-            'Remove that section yourself and re-run, or re-run with --migrate to have '
-            'the section commented out automatically (nothing is deleted; undo is trivial).'
-        )
+def disable_manual(text):
+    indices = set(server_lines(text))
+    return '\n'.join('# ' + line if i in indices else line
+                     for i, line in enumerate(text.splitlines())) + '\n'
 
 
-def archive_manual_skill(home, migrate):
-    """Warn about (and optionally archive) a manually installed same-name skill."""
-    for name in (SKILL_NAME, LEGACY_SKILL_NAME):
-        manual = home / '.codex' / 'skills' / name
-        if not manual.is_dir():
+def discover_skills(home, codex_home):
+    found = []
+    for root in dict.fromkeys((codex_home / 'skills', home / '.agents/skills')):
+        if not root.is_dir():
             continue
-        if not migrate:
-            print(
-                f'NOTE: {manual} also declares the `{name}` skill. The manual copy and the '
-                'plugin copy will shadow each other; the plugin bundles a newer version '
-                '(question-timing rules, session-persistent activation).\n'
-                'Re-run with --migrate to archive the manual copy automatically (renamed, never deleted).'
-            )
-            return
-        stamp = time.strftime('%Y%m%d-%H%M%S')
-        backup = manual.with_name(f'{name}.bak-{stamp}')
-        manual.rename(backup)
-        print(f'  archived {manual} -> {backup}')
+        for path in root.iterdir():
+            if not any(path.name == n or path.name.startswith(n + '.bak-') for n in SKILL_NAMES):
+                continue
+            skill = path / 'SKILL.md'
+            if not skill.is_file():
+                continue
+            text = skill.read_text(encoding='utf-8')
+            if not re.search(r'^name:\s*[\"\']?(discuss-with-me|discussion-mode)[\"\']?\s*$', text, re.M) or 'human_input' not in text:
+                raise ValueError(f'Unrecognized conflicting skill: {path}. Resolve it manually.')
+            if path.is_symlink() or path.resolve().parent != root.resolve():
+                raise ValueError(f'Refusing to migrate linked skill: {path}')
+            found.append(path)
+    return found
 
 
-def remove_stale_target_skill(target):
-    """Delete a pre-0.1.1 `skills/discussion-mode` copy left in the plugin target.
+def find_codex(home):
+    for name in ('codex.exe', 'codex.cmd', 'codex') if os.name == 'nt' else ('codex',):
+        executable = shutil.which(name)
+        if executable:
+            return executable
+    bundled = Path(os.environ.get('LOCALAPPDATA', str(home / 'AppData/Local'))) / 'OpenAI/Codex/bin'
+    candidates = [p for p in bundled.glob('*/codex.exe') if p.is_file() and p.stat().st_size > 1024 * 1024]
+    if candidates:
+        return str(max(candidates, key=lambda p: p.stat().st_mtime))
+    raise ValueError('Codex CLI not found. Install Codex and put its executable on PATH.')
 
-    The target tree is this installer's own output, so removing the old-named
-    skill directory prevents the renamed plugin from shipping both copies.
-    """
-    stale = target / 'skills' / LEGACY_SKILL_NAME
-    if stale.is_dir():
-        shutil.rmtree(stale)
-        print(f'  removed stale {stale} (superseded by skills/{SKILL_NAME})')
 
-
-def run_helper(cmd, **kwargs):
-    """Run a plugin-creator helper, translating a broken interpreter into guidance.
-
-    A crippled python.exe on PATH (LibreOffice bundles one) fails with WinError 5
-    the moment it must spawn a child; that should read as guidance, not a traceback.
-    """
+def install(home, codex_home, source, node, codex, migrate=False, run=subprocess.run):
+    home, codex_home, source = home.resolve(), codex_home.resolve(), source.resolve()
+    target = home / 'plugins' / PLUGIN_NAME
+    marketplace = home / '.agents/plugins/marketplace.json'
+    config = codex_home / 'config.toml'
+    original_market = marketplace.read_bytes() if marketplace.exists() else None
+    original_config = config.read_bytes() if config.exists() else None
+    market = json.loads(original_market) if original_market else {
+        'name': 'personal', 'interface': {'displayName': 'Personal'}, 'plugins': []}
+    if not re.fullmatch(r'[A-Za-z0-9_-]+', market.get('name', '')) or not isinstance(market.get('plugins'), list):
+        raise ValueError('Invalid personal marketplace metadata.')
+    entries = market['plugins']
+    expected = {'source': 'local', 'path': './plugins/' + PLUGIN_NAME}
+    current = [e for e in entries if e.get('name') == PLUGIN_NAME]
+    legacy = [e for e in entries if e.get('name') == LEGACY_PLUGIN_NAME]
+    if legacy and legacy[0].get('source') != {'source': 'local', 'path': './plugins/' + LEGACY_PLUGIN_NAME}:
+        raise ValueError('Legacy plugin points to another source; resolve it manually.')
+    if len(current) > 1 or len(legacy) > 1:
+        raise ValueError('Duplicate plugin entries; resolve them before installing.')
+    if current and current[0].get('source') != expected:
+        raise ValueError('Existing JustAskMe entry points to another source.')
+    if target.exists():
+        if target.is_symlink() or target.resolve().parent != (home / 'plugins').resolve():
+            raise ValueError('Refusing to replace a linked plugin directory.')
+        manifest = json.loads((target / '.codex-plugin/plugin.json').read_text(encoding='utf-8'))
+        if manifest.get('name') != PLUGIN_NAME or not current:
+            raise ValueError('Existing target is not a registered JustAskMe installation.')
+    text = original_config.decode('utf-8-sig') if original_config else ''
+    skills = discover_skills(home, codex_home)
+    if (legacy or server_lines(text) or skills) and not migrate:
+        raise ValueError('Conflicting installation found. Re-run with --migrate to back it up and migrate it.')
+    env = dict(os.environ, CODEX_HOME=str(codex_home))
+    version = run([node, '--version'], check=True, capture_output=True, text=True).stdout.strip()
+    match = re.fullmatch(r'v(\d+)\.(\d+)\.(\d+)', version)
+    if not match or tuple(map(int, match.groups())) < (20, 11, 0):
+        raise ValueError('Node.js >=20.11.0 is required.')
+    run([codex, 'plugin', 'add', '--help'], check=True, capture_output=True, env=env)
+    backup_root = codex_home / 'just-ask-me-backups'
+    backup_root.mkdir(parents=True, exist_ok=True)
+    backup = Path(tempfile.mkdtemp(prefix='install-', dir=backup_root))
+    for name, content in (('marketplace.json', original_market), ('config.toml', original_config)):
+        if content is not None:
+            (backup / name).write_bytes(content)
+    write_json(backup / 'restore.json', {'target': str(target), 'marketplace': str(marketplace),
+               'config': str(config), 'had_marketplace': original_market is not None,
+               'had_config': original_config is not None, 'skills': [str(p) for p in skills]})
+    stage = backup / PLUGIN_NAME
+    shutil.copytree(source, stage)
+    manifest_path = stage / '.codex-plugin/plugin.json'
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+    if manifest.get('name') != PLUGIN_NAME:
+        raise ValueError('Unexpected packaged plugin name.')
+    manifest['version'] = manifest['version'].split('+')[0] + '+codex.' + uuid.uuid4().hex
+    write_json(manifest_path, manifest)
+    mcp = json.loads((stage / '.mcp.json').read_text(encoding='utf-8'))
+    mcp['mcpServers'][SERVER_KEY]['command'] = node
+    write_json(stage / '.mcp.json', mcp)
+    if not (stage / 'skills/discuss-with-me/SKILL.md').is_file():
+        raise ValueError('Packaged skill is missing.')
+    run([node, '--check', str(stage / 'server/index.mjs')], check=True, capture_output=True)
+    if not current:
+        entries.append({'name': PLUGIN_NAME, 'source': expected,
+                        'policy': {'installation': 'AVAILABLE', 'authentication': 'ON_INSTALL'},
+                        'category': 'Productivity'})
+    moved = []
+    swapped = False
+    registration_attempted = False
+    legacy_attempted = False
     try:
-        return subprocess.run(cmd, **kwargs)
-    except OSError as error:
-        raise SystemExit(
-            f'Could not run {cmd[1] if len(cmd) > 1 else cmd[0]} with {cmd[0]} ({error}). '
-            'The interpreter on PATH is probably broken (LibreOffice and some bundles ship '
-            'a crippled python.exe). Re-run with an explicit one, e.g. "py -3 install.py".'
-        )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists():
+            target.rename(backup / 'previous-plugin')
+        stage.rename(target)
+        swapped = True
+        write_json(marketplace, market)
+        registration_attempted = True
+        run([codex, 'plugin', 'add', f'{PLUGIN_NAME}@{market["name"]}'], check=True, env=env)
+        if legacy:
+            legacy_attempted = True
+            run([codex, 'plugin', 'remove', f'{LEGACY_PLUGIN_NAME}@{market["name"]}'], check=True, env=env)
+            market['plugins'] = [e for e in entries if e.get('name') != LEGACY_PLUGIN_NAME]
+            write_json(marketplace, market)
+        if server_lines(text):
+            # Read after registration to preserve changes made by the CLI.
+            config.write_text(disable_manual(config.read_text(encoding='utf-8-sig')), encoding='utf-8')
+        for i, path in enumerate(skills):
+            destination = backup / f'skill-{i}'
+            path.rename(destination)
+            moved.append((path, destination))
+    except BaseException:
+        errors = []
+        def recover(action):
+            try:
+                action()
+            except Exception as error:
+                errors.append(str(error))
+        if registration_attempted:
+            recover(lambda: run([codex, 'plugin', 'remove', f'{PLUGIN_NAME}@{market["name"]}'], check=True, env=env))
+        for path, destination in reversed(moved):
+            recover(lambda p=path, d=destination: d.rename(p))
+        if swapped:
+            recover(lambda: target.rename(backup / 'failed-plugin'))
+        if (backup / 'previous-plugin').exists():
+            recover(lambda: (backup / 'previous-plugin').rename(target))
+        def restore_file(path, content):
+            if content is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+        recover(lambda: restore_file(marketplace, original_market))
+        if current:
+            recover(lambda: run([codex, 'plugin', 'add', f'{PLUGIN_NAME}@{market["name"]}'], check=True, env=env))
+        if legacy_attempted:
+            recover(lambda: run([codex, 'plugin', 'add', f'{LEGACY_PLUGIN_NAME}@{market["name"]}'], check=True, env=env))
+        recover(lambda: restore_file(config, original_config))
+        print(f'Installation failed. Recovery backups: {backup}', file=sys.stderr)
+        if errors:
+            print('Recovery needs attention: ' + '; '.join(errors), file=sys.stderr)
+        raise
+    print(f'Installed JustAskMe. Recovery backups: {backup}')
+    print('Open a NEW Codex task and run human_input_status, then try $discuss-with-me.')
+    return backup
 
 
 def main():
-    if sys.version_info < (3, 10):
-        raise SystemExit('Python 3.10+ is required.')
-
-    migrate = '--migrate' in sys.argv[1:]
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--migrate', action='store_true')
+    args = parser.parse_args()
     home = Path.home()
-    source = Path(__file__).resolve().parent / 'plugins' / PLUGIN_NAME
-    if not source.is_dir():
-        raise SystemExit(f'Plugin source not found: {source}')
-
-    check_manual_server(home, migrate)
-
+    codex_home = Path(os.environ.get('CODEX_HOME', str(home / '.codex'))).expanduser()
     node = shutil.which('node')
     if not node:
-        raise SystemExit(
-            'Node.js was not found on PATH. Install Node.js 20+ and re-run, '
-            'or edit ~/plugins/%s/.mcp.json manually.' % PLUGIN_NAME
-        )
-
-    target = home / 'plugins' / PLUGIN_NAME
-    helpers = home / '.codex/skills/.system/plugin-creator/scripts'
-    create = helpers / 'create_basic_plugin.py'
-    if not create.is_file():
-        raise SystemExit('The Codex plugin-creator skill is required for personal marketplace registration.')
-
-    bundled = Path(os.environ.get('LOCALAPPDATA', str(home / 'AppData/Local'))) / 'OpenAI/Codex/bin'
-    candidates = (
-        [p for p in bundled.glob('*/codex.exe') if p.is_file() and p.stat().st_size > 1024 * 1024]
-        if os.name == 'nt'
-        else []
-    )
-    codex = str(max(candidates, key=lambda p: p.stat().st_mtime)) if candidates else (
-        shutil.which('codex.cmd') if os.name == 'nt' else shutil.which('codex')
-    )
-    if not codex:
-        raise SystemExit('Codex CLI not found in PATH.')
-
-    migrate_legacy_plugin(home, codex)
-
-    marketplace = home / '.agents/plugins/marketplace.json'
-    existing = marketplace.exists()
-    if existing:
-        market = run_helper(
-            [sys.executable, str(helpers / 'read_marketplace_name.py')],
-            check=True, capture_output=True, text=True,
-        ).stdout.strip()
-    else:
-        market = 'personal'
-
-    expected_source = {'source': 'local', 'path': f'./plugins/{PLUGIN_NAME}'}
-
-    # A second installation is explicit and only updates this plugin's own tree.
-    if target.exists():
-        manifest = json.loads((target / '.codex-plugin/plugin.json').read_text(encoding='utf-8'))
-        if manifest.get('name') != PLUGIN_NAME:
-            raise SystemExit('Target is not the expected plugin.')
-        entries = json.loads(marketplace.read_text(encoding='utf-8'))['plugins'] if existing else []
-        if not any(
-            p.get('name') == PLUGIN_NAME and p.get('source') == expected_source for p in entries
-        ):
-            raise SystemExit('Existing target has no matching personal marketplace entry.')
-    else:
-        run_helper(
-            [sys.executable, str(create), PLUGIN_NAME, '--with-skills', '--with-mcp', '--with-marketplace'],
-            check=True,
-        )
-
-    shutil.copytree(
-        source,
-        target,
-        dirs_exist_ok=True,
-        ignore=shutil.ignore_patterns('__pycache__', '*.pyc'),
-    )
-
-    remove_stale_target_skill(target)
-
-    # Resolve `node` for this machine so the plugin does not depend on the
-    # spawned process' PATH.
-    config_path = target / '.mcp.json'
-    config = json.loads(config_path.read_text(encoding='utf-8'))
-    if SERVER_KEY not in config.get('mcpServers', {}):
-        raise SystemExit(f'.mcp.json is missing the `{SERVER_KEY}` server entry.')
-    config['mcpServers'][SERVER_KEY]['command'] = node
-    config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-
-    run_helper([sys.executable, str(helpers / 'update_plugin_cachebuster.py'), str(target)], check=True)
-    run_helper([sys.executable, str(helpers / 'validate_plugin.py'), str(target)], check=True)
-    try:
-        subprocess.run([codex, 'plugin', 'add', f'{PLUGIN_NAME}@{market}'], check=True)
-    except OSError as error:
-        raise SystemExit(
-            f'Could not spawn the Codex CLI ({error}). Re-run with an explicit interpreter, '
-            'e.g. "py -3 install.py", or run "codex plugin add '
-            f'{PLUGIN_NAME}@{market}" yourself.'
-        )
-
-    # Migrate only after the plugin is registered, so a failed install never
-    # leaves the user with neither registration working.
-    print('Migrating conflicting manual registrations:')
-    config_path = home / '.codex' / 'config.toml'
-    if config_path.is_file():
-        comment_out_server_section(config_path)
-    archive_manual_skill(home, migrate)
-
-    print(f'Installed with node = {node}')
-    print('Verify in a NEW Codex task:')
-    print('  1. ask human_input_status — it must list exactly one set of ask_* tools.')
-    print('  2. Run $discuss-with-me: it should mention 提问时机 (the plugin skill version).')
-    print('Then try: 遇到需要我决定的地方就弹卡片问我')
+        raise ValueError('Node.js >=20.11.0 must be on PATH.')
+    install(home, codex_home, Path(__file__).resolve().parent / 'plugins' / PLUGIN_NAME,
+            node, find_codex(home), args.migrate)
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+        raise SystemExit(str(error)) from error

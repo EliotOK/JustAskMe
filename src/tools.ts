@@ -101,7 +101,7 @@ export function renderForAgent(question: FormQuestion): string {
 function answerText(question: FormQuestion, answer: FormAnswer): string {
   switch (question.kind) {
     case 'choice':
-      return answer.selected[0] ?? '';
+      return answer.selected[0] ?? answer.freeText ?? '';
     case 'confirm':
       return answer.confirmed === true ? 'yes' : 'no';
     case 'text':
@@ -123,15 +123,17 @@ function withAnswer(
   return {
     result: {
       ...base,
-      status: 'answered',
+      status: question.kind === 'choice' && answer.selected.length === 0 ? 'discussion' : 'answered',
       via,
       answer: text,
       free_text: answer.freeText,
       selected: answer.selected,
       confirmed: answer.confirmed,
       elapsed_ms: Date.now() - started,
-      message: `User answered: ${text}.${note}`,
-      next_step: 'Continue with this answer. Do not ask this question again.'
+      message: `User replied: ${text}.${note}`,
+      next_step: answer.freeText
+        ? 'Read the full free_text together with selected. If it asks for clarification or limits action, address that first; do not treat the selection as permission. If the user clearly decides in text, use that decision without asking again.'
+        : 'Continue with this answer. Do not ask this question again.'
     },
     isError: false
   };
@@ -223,7 +225,7 @@ export async function runQuestion(
           base,
           question,
           started,
-          `The MCP client returned "decline" after only ${elapsed}ms, which almost certainly means it is auto-rejecting elicitation instead of prompting the user (in Codex, check approval_policy.granular.mcp_elicitations). Nobody saw this question.`
+          `The MCP client returned "decline" after only ${elapsed}ms, which may indicate automatic rejection (in Codex, check approval_policy.granular.mcp_elicitations). Timing alone cannot establish whether the question was displayed.`
         );
         suspected.result.auto_reject_suspected = true;
         return suspected;

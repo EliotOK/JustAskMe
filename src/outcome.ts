@@ -8,6 +8,8 @@
 export type AskStatus =
   /** The human answered; `answer`/`selected`/`confirmed` are authoritative. */
   | 'answered'
+  /** A free-text reply requiring interpretation before any decision. */
+  | 'discussion'
   /** The human (or the client) rejected the question. */
   | 'declined'
   /** The human dismissed it, or the agent's tool call was cancelled. */
@@ -61,7 +63,7 @@ export type FormQuestion =
 
 /** A parsed, validated answer to a {@link FormQuestion}. */
 export interface FormAnswer {
-  /** Selected label(s). Exactly one for `choice`, empty for `confirm`/`text`. */
+  /** Selected label(s). Zero or one for `choice`, empty for `confirm`/`text`. */
   selected: string[];
   /** Free-text companion for `choice` when `allowFreeText` was set. */
   freeText: string | null;
@@ -97,7 +99,7 @@ export interface AskResult {
   /** Primary answer as a string: chosen label, confirmed `"yes"`/`"no"`, or text. */
   answer: string | null;
   free_text: string | null;
-  /** Selected labels; one entry for `choice`, N for `multi_select`. */
+  /** Selected labels; zero or one entry for `choice`, N for `multi_select`. */
   selected: string[];
   /** `confirm` only. */
   confirmed: boolean | null;

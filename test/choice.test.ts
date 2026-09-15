@@ -51,7 +51,7 @@ describe('ask_choice over MCP form elicitation', () => {
         required?: string[];
       };
       assert.deepStrictEqual(schema.properties['choice']?.enum, ['site', 'document']);
-      assert.deepStrictEqual(schema.required, ['choice']);
+      assert.deepStrictEqual(schema.required, []);
       assert.match(sent.message, /site — The public docs site\./, 'option descriptions are inlined into the prompt');
     } finally {
       await harness.close();
@@ -266,4 +266,22 @@ describe('ask_multi_select over MCP form elicitation', () => {
       await harness.close();
     }
   });
+});
+
+
+describe('free-text discussion', () => {
+  for (const reply of ['Explain the difference first', 'Use a third approach']) {
+    it(`preserves a text-only reply: ${reply}`, async () => {
+      const harness = await startHarness({ onElicit: () => ({ action: 'accept', content: { free_text: reply } }) });
+      try {
+        const { ask } = await callTool(harness.client, { name: 'ask_choice', arguments: {
+          question: 'Which approach?', options: [{ label: 'A' }, { label: 'B' }], allow_free_text: true
+        } });
+        assert.equal(ask.status, 'discussion');
+        assert.deepEqual(ask.selected, []);
+        assert.equal(ask.free_text, reply);
+        assert.match(ask.next_step, /clarification/);
+      } finally { await harness.close(); }
+    });
+  }
 });

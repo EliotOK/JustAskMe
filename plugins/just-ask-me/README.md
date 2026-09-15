@@ -9,7 +9,7 @@
 
 ## 运行前提
 
-只需要 **Node.js ≥ 20** 在 `PATH` 上（Codex 本身即 Node 包装器，通常已满足）。
+运行插件需要 **Node.js ≥ 20.11.0**；请单独确认 Node 已安装。
 
 `server/index.mjs` 是用 esbuild 打包的**单文件**，已把 `@modelcontextprotocol/sdk` 与 `zod` 内联，**无需 `npm install`**。
 
@@ -29,11 +29,11 @@
 }
 ```
 
-`command` 保持裸 `node`，由 Codex 安装时解析成本机绝对路径。
+`command` 保持裸 `node`，由本仓库的安装器改成本机绝对路径。
 
 ## 环境变量（可选）
 
-在 Codex 的 `config.toml` 里为 `mcp_servers.human_input` 配置：
+在插件 `.mcp.json` 的 `mcpServers.human_input.env` 中配置，修改后重新安装插件：
 
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
@@ -45,3 +45,5 @@
 ## 完整文档
 
 见仓库根目录的 `README.md`。
+
+开启 `allow_free_text` 后可以只提交文字。仅文字返回 `discussion`，模型先理解或解释回复；选项与文字一起提交时，文字中的限制仍须遵守。

@@ -55,7 +55,7 @@ export const askChoiceInputSchema = {
     .boolean()
     .optional()
     .describe(
-      'Set true to also show an optional free-text field alongside the options, letting the user add nuance or an answer you did not list.'
+      'Set true to also show an optional free-text field alongside the options, letting the user reply or ask a question without selecting an option.'
     ),
   timeout_ms: timeoutField
 };
@@ -124,6 +124,7 @@ export const askResultShape = {
   status: z
     .enum([
       'answered',
+      'discussion',
       'declined',
       'cancelled',
       'timeout',
@@ -133,7 +134,7 @@ export const askResultShape = {
       'error'
     ])
     .describe(
-      'Outcome. Only `answered` carries a usable answer. `needs_user_input` means you must ask the user yourself, in chat, using the question and options in `message`.'
+      'Outcome. `answered` carries a submitted answer; `discussion` carries a free-text reply to interpret before deciding. `needs_user_input` means you must ask the user yourself, in chat, using the question and options in `message`.'
     ),
   via: z.enum(['elicitation', 'http_form', 'none']).describe('Channel that produced the outcome.'),
   question: z.string().describe('The question as it was asked.'),
@@ -141,7 +142,7 @@ export const askResultShape = {
   next_step: z.string().describe('What you should do next. Follow it.'),
   answer: z.string().nullable().describe('The answer as a string: chosen label, "yes"/"no", or the typed text.'),
   free_text: z.string().nullable().describe('Optional free-text note supplied alongside a choice.'),
-  selected: z.array(z.string()).describe('Selected labels; exactly one for ask_choice, N for ask_multi_select.'),
+  selected: z.array(z.string()).describe('Selected labels; zero or one for ask_choice, N for ask_multi_select.'),
   confirmed: z.boolean().nullable().describe('ask_confirm only: true for yes, false for no.'),
   client_elicitation: z
     .boolean()

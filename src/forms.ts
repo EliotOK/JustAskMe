@@ -62,9 +62,9 @@ export function buildFormRequest(question: FormQuestion, multiSelectMode: MultiS
   switch (question.kind) {
     case 'choice': {
       const labels = question.options.map(option => option.label);
-      const lines = [question.question, '', 'Options:', optionBlock(question.options), '', 'Choose exactly one option.'];
+      const lines = [question.question, '', 'Options:', optionBlock(question.options), '', question.allowFreeText ? 'Choose an option or reply in text.' : 'Choose exactly one option.'];
       if (question.allowFreeText) {
-        lines.push('You may add extra detail in the free-text field (optional).');
+        lines.push('You may leave the choice unset and reply or ask a question in the free-text field.');
       }
       if (question.defaultValue !== undefined) {
         lines.push(`Default: ${question.defaultValue}`);
@@ -85,7 +85,7 @@ export function buildFormRequest(question: FormQuestion, multiSelectMode: MultiS
       if (question.allowFreeText) {
         properties['free_text'] = {
           type: 'string',
-          title: 'Additional notes (optional)',
+          title: 'Your reply or question',
           description: 'Optional free-text answer or extra context.'
         };
       }
@@ -95,7 +95,7 @@ export function buildFormRequest(question: FormQuestion, multiSelectMode: MultiS
         requestedSchema: asRequestedSchema({
           type: 'object',
           properties,
-          required: ['choice']
+          required: question.allowFreeText ? [] : ['choice']
         })
       };
     }
@@ -238,16 +238,17 @@ export function interpretContent(
   switch (question.kind) {
     case 'choice': {
       const raw = content['choice'];
+      const rawFree = content['free_text'];
+      const freeText = question.allowFreeText && typeof rawFree === 'string' && rawFree.trim() !== ''
+        ? rawFree.trim() : null;
+      if ((raw === undefined || raw === '') && freeText) {
+        return { ok: true, answer: { selected: [], freeText, confirmed: null, text: null } };
+      }
       if (typeof raw !== 'string' || raw.trim() === '') {
-        return { ok: false, detail: 'response did not contain a non-empty `choice` string' };
+        return { ok: false, detail: 'choose an option or submit a non-empty free-text reply when enabled' };
       }
       const selected = canonicalize([raw], question.options);
-      const rawFree = content['free_text'];
-      const freeText = typeof rawFree === 'string' && rawFree.trim() !== '' ? rawFree.trim() : null;
-      return {
-        ok: true,
-        answer: { selected, freeText, confirmed: null, text: null }
-      };
+      return { ok: true, answer: { selected, freeText, confirmed: null, text: null } };
     }
 
     case 'confirm': {

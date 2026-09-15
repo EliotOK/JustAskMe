@@ -1,6 +1,6 @@
 {
   "name": "just-ask-me",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Structured human-in-the-loop questions for OpenAI Codex CLI (and any MCP client) via MCP form elicitation, with a safe non-blocking fallback. Ships as a Codex plugin bundling a discuss-with-me skill.",
   "type": "module",
@@ -46,14 +46,17 @@
     "test": "node --import tsx --test \"test/*.test.ts\"",
     "test:smoke": "node scripts/smoke-stdio.mjs",
     "test:plugin": "node scripts/smoke-stdio.mjs plugins/just-ask-me/server/index.mjs",
-    "verify": "npm run typecheck && npm run build && npm run build:plugin && npm test && npm run test:plugin",
-    "prepublishOnly": "npm run build"
+    "verify": "npm run typecheck && npm run build && npm run build:plugin && npm test && npm run test:plugin && npm run test:installer && npm run test:browser",
+    "prepublishOnly": "npm run build",
+    "test:browser": "playwright test test/browser --workers=1",
+    "test:installer": "python -m unittest discover -s test -p test_install.py"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/node": "^26.5.1",
     "esbuild": "^0.28.2",
     "tsx": "^4.23.13",

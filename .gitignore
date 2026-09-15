@@ -16,3 +16,7 @@ Thumbs.db
 
 # Python 字节码（install.py 本地运行产生）
 __pycache__/
+
+# Browser test artifacts
+test-results/
+playwright-report/

@@ -1,5 +1,5 @@
-86747687102d4b655ada15b5f48acf1881bf1fc82682d58e0030caea6d6f5908  plugins/just-ask-me/.codex-plugin/plugin.json
+574183e271753ed3cf1fef6ed9c2a73d39181188018d35726cab38b22a67fac8  plugins/just-ask-me/.codex-plugin/plugin.json
 745306875e24338954fcc1231dab5516bf1e06ff076366f34aee3c433071201d  plugins/just-ask-me/.mcp.json
-bc12fb24af1a56afadcb29e7bca7b44f00ba6ceda5a2575cccf72399ec9a9881  plugins/just-ask-me/README.md
-2d8b88e26f75934b2d15c45841c322556c1dbde9c0bbe2de3bdfcfb55bd68859  plugins/just-ask-me/server/index.mjs
-e6f17f6f3a1d1e8b32ec22d95f6e4dfd029c519221db0a39f44c178d02c68d90  plugins/just-ask-me/skills/discuss-with-me/SKILL.md
+a42c081478e39c7bdfa25ef60cf028c7c6fa531ed0f676e8f122506b6620880a  plugins/just-ask-me/README.md
+3853e7e6344711d7a5c65df7e0a283eb1b3c4fbd18b40bc500a2db1bdce41d7f  plugins/just-ask-me/server/index.mjs
+5f44e4bd90f184c0efc5b4aea89c0382cf598ca0d1255cf2676390eb02f85098  plugins/just-ask-me/skills/discuss-with-me/SKILL.md

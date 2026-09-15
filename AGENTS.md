@@ -46,10 +46,11 @@
 
 ### 处理返回值（重要）
 
-每个 `ask_*` 都返回统一的 `status` 字段。**只有 `status: "answered"` 才代表拿到了答案。**
+每个 `ask_*` 都返回统一的 `status` 字段。**`answered` 表示提交了答案；`discussion` 表示提交了需要理解的自由文字。**
 
-- `answered` — 用 `answer` / `selected` / `confirmed` / `free_text`，继续干活，不要重复问同一题。
-- `needs_user_input` — MCP elicitation 不可用，题目**从未展示给用户**。把 `message` 里的问题和选项**原样**复述给用户，等他们回复后再继续。
+- `answered` — 结合 `answer` / `selected` / `confirmed` / `free_text` 理解完整回复；文字中的追问和执行限制不能被选项覆盖。
+- `discussion` — 先理解 `free_text`。追问先解释；文字已明确决定时直接采用，不要求再点选。
+- `needs_user_input` — MCP elicitation 不可用，尚未取得可用的表单答案。把 `message` 里的问题和选项**原样**复述给用户，等他们回复后再继续。
 - `declined` — 用户拒绝回答。**不要再问**。选最保守的方案、明确说明你的假设，或者停下来报告需要决策。
 - `cancelled` / `timeout` — 没有人回答。**未回答绝不等于许可**：破坏性操作上不要猜，选安全默认值或报告阻塞。
 - `invalid_response` / `unsupported` / `error` — 阅读 `message` 和 `next_step` 并照做。

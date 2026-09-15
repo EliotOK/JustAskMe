@@ -36517,7 +36517,7 @@ var EMPTY_COMPLETION_RESULT = {
 
 // src/config.ts
 var SERVER_NAME = "just-ask-me";
-var SERVER_VERSION = "0.2.0";
+var SERVER_VERSION = "0.3.0";
 var DEFAULT_CONFIG = {
   timeoutMs: 3e5,
   fallback: "return",
@@ -36656,9 +36656,9 @@ function buildFormRequest(question, multiSelectMode) {
   switch (question.kind) {
     case "choice": {
       const labels = question.options.map((option) => option.label);
-      const lines = [question.question, "", "Options:", optionBlock(question.options), "", "Choose exactly one option."];
+      const lines = [question.question, "", "Options:", optionBlock(question.options), "", question.allowFreeText ? "Choose an option or reply in text." : "Choose exactly one option."];
       if (question.allowFreeText) {
-        lines.push("You may add extra detail in the free-text field (optional).");
+        lines.push("You may leave the choice unset and reply or ask a question in the free-text field.");
       }
       if (question.defaultValue !== void 0) {
         lines.push(`Default: ${question.defaultValue}`);
@@ -36677,7 +36677,7 @@ function buildFormRequest(question, multiSelectMode) {
       if (question.allowFreeText) {
         properties["free_text"] = {
           type: "string",
-          title: "Additional notes (optional)",
+          title: "Your reply or question",
           description: "Optional free-text answer or extra context."
         };
       }
@@ -36686,7 +36686,7 @@ function buildFormRequest(question, multiSelectMode) {
         requestedSchema: asRequestedSchema({
           type: "object",
           properties,
-          required: ["choice"]
+          required: question.allowFreeText ? [] : ["choice"]
         })
       };
     }
@@ -36781,16 +36781,16 @@ function interpretContent(question, content, multiSelectMode) {
   switch (question.kind) {
     case "choice": {
       const raw = content["choice"];
+      const rawFree = content["free_text"];
+      const freeText = question.allowFreeText && typeof rawFree === "string" && rawFree.trim() !== "" ? rawFree.trim() : null;
+      if ((raw === void 0 || raw === "") && freeText) {
+        return { ok: true, answer: { selected: [], freeText, confirmed: null, text: null } };
+      }
       if (typeof raw !== "string" || raw.trim() === "") {
-        return { ok: false, detail: "response did not contain a non-empty `choice` string" };
+        return { ok: false, detail: "choose an option or submit a non-empty free-text reply when enabled" };
       }
       const selected = canonicalize([raw], question.options);
-      const rawFree = content["free_text"];
-      const freeText = typeof rawFree === "string" && rawFree.trim() !== "" ? rawFree.trim() : null;
-      return {
-        ok: true,
-        answer: { selected, freeText, confirmed: null, text: null }
-      };
+      return { ok: true, answer: { selected, freeText, confirmed: null, text: null } };
     }
     case "confirm": {
       const raw = content["confirm"];
@@ -36878,12 +36878,12 @@ function optionRows(options, inputType, name, required2) {
 function buildBody(question, multiSelectMode) {
   switch (question.kind) {
     case "choice": {
-      const freeText = question.allowFreeText ? `<label class="block">Additional notes (optional)
-  <textarea name="free_text" rows="3" placeholder="Optional free-text answer"></textarea>
+      const freeText = question.allowFreeText ? `<label class="block">Your reply or question
+  <textarea name="free_text" rows="3" placeholder="Reply here, or ask for clarification"></textarea>
 </label>` : "";
       return `<fieldset>
   <legend>Choose one</legend>
-  ${optionRows(question.options, "radio", "choice", true)}
+  ${optionRows(question.options, "radio", "choice", !question.allowFreeText)}
 </fieldset>
 ${freeText}`;
     }
@@ -36915,7 +36915,7 @@ ${freeText}`;
       }
       return `<fieldset>
   <legend>Select one or more</legend>
-  ${optionRows(question.options, "checkbox", "choices", needOne)}
+  ${optionRows(question.options, "checkbox", "choices", false)}
 </fieldset>`;
     }
   }
@@ -36997,15 +36997,27 @@ function renderPage(question, multiSelectMode, token) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     }).then(function (response) {
-      if (!response.ok) throw new Error('HTTP ' + response.status);
-      return response.json();
+      return response.json().then(function (body) {
+        if (!response.ok) throw new Error(body.error || 'HTTP ' + response.status);
+        return body;
+      });
     });
   }
 
   form.addEventListener('submit', function (event) {
     event.preventDefault();
     err.textContent = '';
-    send({ cancelled: false, values: collect() })
+    var values = collect();
+    var bounds = ${JSON.stringify(question.kind === "multi_select" ? { min: question.min ?? 1, max: question.max ?? question.options.length, mode: multiSelectMode } : null)};
+    if (bounds) {
+      var chosen = bounds.mode === 'text' ? String(values.choices_text || '').split(/[,\\n;]/).map(function (s) { return s.trim(); }).filter(Boolean) : [].concat(values.choices || []);
+      var count = new Set(chosen).size;
+      if (count < bounds.min || count > bounds.max) {
+        err.textContent = 'Select between ' + bounds.min + ' and ' + bounds.max + ' options.';
+        return;
+      }
+    }
+    send({ cancelled: false, values: values })
       .then(function () {
         document.body.innerHTML = '<main><p class="kicker">Submitted</p><h1>Thanks \u2014 you can close this tab.</h1></main>';
       })
@@ -37123,6 +37135,15 @@ async function serveForm(question, multiSelectMode, options) {
         try {
           const body = await readBody(request);
           const parsed = JSON.parse(body);
+          const values = normalizeValues(parsed.values);
+          if (parsed.cancelled !== true) {
+            const interpreted = interpretContent(question, values, multiSelectMode);
+            if (!interpreted.ok) {
+              response.writeHead(422, { "Content-Type": "application/json" });
+              response.end(JSON.stringify({ ok: false, error: interpreted.detail }));
+              return;
+            }
+          }
           response.writeHead(200, { "Content-Type": "application/json" });
           response.end('{"ok":true}');
           if (parsed.cancelled === true) {
@@ -37213,7 +37234,7 @@ var askChoiceInputSchema = {
   ),
   default: external_exports.string().max(200).optional().describe("Optional label of the recommended option. Must exactly match one of the provided labels."),
   allow_free_text: external_exports.boolean().optional().describe(
-    "Set true to also show an optional free-text field alongside the options, letting the user add nuance or an answer you did not list."
+    "Set true to also show an optional free-text field alongside the options, letting the user reply or ask a question without selecting an option."
   ),
   timeout_ms: timeoutField
 };
@@ -37241,6 +37262,7 @@ var askResultShape = {
   tool: external_exports.string().describe("Name of the tool that produced this result."),
   status: external_exports.enum([
     "answered",
+    "discussion",
     "declined",
     "cancelled",
     "timeout",
@@ -37249,7 +37271,7 @@ var askResultShape = {
     "needs_user_input",
     "error"
   ]).describe(
-    "Outcome. Only `answered` carries a usable answer. `needs_user_input` means you must ask the user yourself, in chat, using the question and options in `message`."
+    "Outcome. `answered` carries a submitted answer; `discussion` carries a free-text reply to interpret before deciding. `needs_user_input` means you must ask the user yourself, in chat, using the question and options in `message`."
   ),
   via: external_exports.enum(["elicitation", "http_form", "none"]).describe("Channel that produced the outcome."),
   question: external_exports.string().describe("The question as it was asked."),
@@ -37257,7 +37279,7 @@ var askResultShape = {
   next_step: external_exports.string().describe("What you should do next. Follow it."),
   answer: external_exports.string().nullable().describe('The answer as a string: chosen label, "yes"/"no", or the typed text.'),
   free_text: external_exports.string().nullable().describe("Optional free-text note supplied alongside a choice."),
-  selected: external_exports.array(external_exports.string()).describe("Selected labels; exactly one for ask_choice, N for ask_multi_select."),
+  selected: external_exports.array(external_exports.string()).describe("Selected labels; zero or one for ask_choice, N for ask_multi_select."),
   confirmed: external_exports.boolean().nullable().describe("ask_confirm only: true for yes, false for no."),
   client_elicitation: external_exports.boolean().describe("Whether the connected client declared MCP form-elicitation support during initialize."),
   fallback: external_exports.string().describe("Configured fallback mode (HIM_FALLBACK)."),
@@ -37313,7 +37335,7 @@ function renderForAgent(question) {
 function answerText(question, answer) {
   switch (question.kind) {
     case "choice":
-      return answer.selected[0] ?? "";
+      return answer.selected[0] ?? answer.freeText ?? "";
     case "confirm":
       return answer.confirmed === true ? "yes" : "no";
     case "text":
@@ -37328,15 +37350,15 @@ function withAnswer(base, question, answer, via, started) {
   return {
     result: {
       ...base,
-      status: "answered",
+      status: question.kind === "choice" && answer.selected.length === 0 ? "discussion" : "answered",
       via,
       answer: text,
       free_text: answer.freeText,
       selected: answer.selected,
       confirmed: answer.confirmed,
       elapsed_ms: Date.now() - started,
-      message: `User answered: ${text}.${note}`,
-      next_step: "Continue with this answer. Do not ask this question again."
+      message: `User replied: ${text}.${note}`,
+      next_step: answer.freeText ? "Read the full free_text together with selected. If it asks for clarification or limits action, address that first; do not treat the selection as permission. If the user clearly decides in text, use that decision without asking again." : "Continue with this answer. Do not ask this question again."
     },
     isError: false
   };
@@ -37393,7 +37415,7 @@ async function runQuestion(tool, question, timeoutMs, args) {
           base,
           question,
           started,
-          `The MCP client returned "decline" after only ${elapsed}ms, which almost certainly means it is auto-rejecting elicitation instead of prompting the user (in Codex, check approval_policy.granular.mcp_elicitations). Nobody saw this question.`
+          `The MCP client returned "decline" after only ${elapsed}ms, which may indicate automatic rejection (in Codex, check approval_policy.granular.mcp_elicitations). Timing alone cannot establish whether the question was displayed.`
         );
         suspected.result.auto_reject_suspected = true;
         return suspected;

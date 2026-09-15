@@ -83,7 +83,7 @@ describe('decline and cancel', () => {
       assert.equal(call.ask.auto_reject_suspected, true);
       // Crucially it is NOT reported as a human "no".
       assert.equal(call.ask.status, 'needs_user_input');
-      assert.match(call.ask.message, /auto-rejecting elicitation/);
+      assert.match(call.ask.message, /may indicate automatic rejection/);
       assert.match(call.ask.message, /1\. staging — Safe\./);
     } finally {
       await harness.close();

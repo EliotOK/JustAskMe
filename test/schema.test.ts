@@ -76,7 +76,7 @@ describe('elicitation schema round-trip', () => {
   it('ask_choice survives the SDK parser with enum, enumNames and free text intact', () => {
     const schema = roundTrip(CHOICE);
     assert.equal(schema.type, 'object');
-    assert.deepStrictEqual(schema.required, ['choice']);
+    assert.deepStrictEqual(schema.required, []);
 
     const choice = schema.properties?.['choice'];
     assert.ok(choice, 'choice property is present');

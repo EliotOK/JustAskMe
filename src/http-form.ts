@@ -19,6 +19,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { IncomingMessage, Server } from 'node:http';
 import { log } from './logger.js';
+import { interpretContent } from './forms.js';
 import type { ChoiceOption, FormQuestion } from './outcome.js';
 
 /** Raw field values exactly as an elicitation `content` object would carry them. */
@@ -67,9 +68,6 @@ function optionRows(
       const description = option.description
         ? `<span class="desc">${escapeHtml(option.description)}</span>`
         : '';
-      // `required` on every input of a radio/checkbox group makes the browser
-      // refuse an empty submit ("choose one of these"), so an unanswered form
-      // can no longer reach the server as a bogus success.
       const requiredAttr = required ? ' required' : '';
       return `<label class="opt" for="${id}">
   <input type="${inputType}" id="${id}" name="${escapeHtml(name)}" value="${escapeHtml(option.label)}"${requiredAttr}>
@@ -83,13 +81,13 @@ function buildBody(question: FormQuestion, multiSelectMode: 'array' | 'text'): s
   switch (question.kind) {
     case 'choice': {
       const freeText = question.allowFreeText
-        ? `<label class="block">Additional notes (optional)
-  <textarea name="free_text" rows="3" placeholder="Optional free-text answer"></textarea>
+        ? `<label class="block">Your reply or question
+  <textarea name="free_text" rows="3" placeholder="Reply here, or ask for clarification"></textarea>
 </label>`
         : '';
       return `<fieldset>
   <legend>Choose one</legend>
-  ${optionRows(question.options, 'radio', 'choice', true)}
+  ${optionRows(question.options, 'radio', 'choice', !question.allowFreeText)}
 </fieldset>
 ${freeText}`;
     }
@@ -121,7 +119,7 @@ ${freeText}`;
       }
       return `<fieldset>
   <legend>Select one or more</legend>
-  ${optionRows(question.options, 'checkbox', 'choices', needOne)}
+  ${optionRows(question.options, 'checkbox', 'choices', false)}
 </fieldset>`;
     }
   }
@@ -204,15 +202,27 @@ function renderPage(question: FormQuestion, multiSelectMode: 'array' | 'text', t
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     }).then(function (response) {
-      if (!response.ok) throw new Error('HTTP ' + response.status);
-      return response.json();
+      return response.json().then(function (body) {
+        if (!response.ok) throw new Error(body.error || 'HTTP ' + response.status);
+        return body;
+      });
     });
   }
 
   form.addEventListener('submit', function (event) {
     event.preventDefault();
     err.textContent = '';
-    send({ cancelled: false, values: collect() })
+    var values = collect();
+    var bounds = ${JSON.stringify(question.kind === 'multi_select' ? { min: question.min ?? 1, max: question.max ?? question.options.length, mode: multiSelectMode } : null)};
+    if (bounds) {
+      var chosen = bounds.mode === 'text' ? String(values.choices_text || '').split(/[,\\n;]/).map(function (s) { return s.trim(); }).filter(Boolean) : [].concat(values.choices || []);
+      var count = new Set(chosen).size;
+      if (count < bounds.min || count > bounds.max) {
+        err.textContent = 'Select between ' + bounds.min + ' and ' + bounds.max + ' options.';
+        return;
+      }
+    }
+    send({ cancelled: false, values: values })
       .then(function () {
         document.body.innerHTML = '<main><p class="kicker">Submitted</p><h1>Thanks — you can close this tab.</h1></main>';
       })
@@ -355,6 +365,15 @@ export async function serveForm(
         try {
           const body = await readBody(request);
           const parsed = JSON.parse(body) as { cancelled?: unknown; values?: unknown };
+          const values = normalizeValues(parsed.values);
+          if (parsed.cancelled !== true) {
+            const interpreted = interpretContent(question, values, multiSelectMode);
+            if (!interpreted.ok) {
+              response.writeHead(422, { 'Content-Type': 'application/json' });
+              response.end(JSON.stringify({ ok: false, error: interpreted.detail }));
+              return;
+            }
+          }
           response.writeHead(200, { 'Content-Type': 'application/json' });
           response.end('{"ok":true}');
           if (parsed.cancelled === true) {
