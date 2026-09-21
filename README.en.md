@@ -3,8 +3,9 @@
 [中文（默认）](README.md)
 
 JustAskMe provides structured questions through MCP form elicitation, together with
-DiscussWithMe, a skill for involving the user in consequential decisions and
-returning to execution once the next step is clear.
+AskWithCard, an implicit skill that routes necessary questions through interactive
+cards without increasing how often Codex asks, plus DiscussWithMe for involving the
+user in consequential decisions and returning to execution once the next step is clear.
 
 ## Install
 
@@ -27,7 +28,10 @@ If an earlier plugin, manual MCP registration, or matching skill conflicts:
 ```
 
 The installer is self-contained. It stages and checks the packaged server before
-registration. It preserves recovery backups under
+registration. It also maintains a marked routing rule in the user-level
+`$CODEX_HOME/AGENTS.md` (default `~/.codex/AGENTS.md`) so necessary questions
+prefer cards. Repeat installs update only that managed block and preserve all
+unrelated user instructions. It preserves recovery backups under
 `$CODEX_HOME/just-ask-me-backups/` (default `~/.codex/just-ask-me-backups/`),
 archives matching skills outside discovery directories, and preserves unrelated
 marketplace entries. On failure it attempts to restore files and registrations;

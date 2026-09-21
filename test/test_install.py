@@ -43,6 +43,9 @@ class InstallTests(unittest.TestCase):
     def test_clean_install_needs_no_external_helpers(self):
         self.install()
         self.assertTrue((self.home / 'plugins/just-ask-me/server/index.mjs').is_file())
+        self.assertTrue((self.home / 'plugins/just-ask-me/skills/ask-with-card/SKILL.md').is_file())
+        self.assertTrue((self.home / 'plugins/just-ask-me/skills/ask-with-card/agents/openai.yaml').is_file())
+        self.assertTrue((self.home / 'plugins/just-ask-me/skills/discuss-with-me/SKILL.md').is_file())
         self.assertFalse((self.home / '.codex').exists())
         self.assertTrue((self.codex_home / 'just-ask-me-backups').is_dir())
 
@@ -56,6 +59,32 @@ class InstallTests(unittest.TestCase):
         data = json.loads(path.read_text())
         self.assertEqual(data['custom'], 'keep')
         self.assertEqual(len(data['plugins']), 1)
+
+    def test_install_adds_one_managed_agents_rule_and_preserves_user_content(self):
+        agents = self.codex_home / 'AGENTS.md'
+        agents.parent.mkdir(parents=True)
+        agents.write_text('# My rules\n\nKeep this.\n', encoding='utf-8')
+        self.install()
+        first = agents.read_text(encoding='utf-8')
+        self.assertIn('# My rules\n\nKeep this.', first)
+        self.assertIn('## JustAskMe 卡片提问', first)
+        self.assertIn('使用 `ask-with-card` 技能', first)
+        self.assertIn('通过 `human_input` 的对应 `ask_*` 工具', first)
+        self.assertEqual(first.count(installer.AGENTS_START), 1)
+        self.install()
+        second = agents.read_text(encoding='utf-8')
+        self.assertEqual(second.count(installer.AGENTS_START), 1)
+        self.assertEqual(second.count('## JustAskMe 卡片提问'), 1)
+
+    def test_failed_install_restores_agents_file(self):
+        agents = self.codex_home / 'AGENTS.md'
+        agents.parent.mkdir(parents=True)
+        original = b'# Existing\r\n'
+        agents.write_bytes(original)
+        self.fail = lambda a: a[1:3] == ['plugin', 'add']
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.install()
+        self.assertEqual(agents.read_bytes(), original)
 
     def test_migration_is_explicit(self):
         path, old = self.seed_market()

@@ -30,7 +30,7 @@ cd JustAskMe
 .\Install.cmd --migrate
 ```
 
-安装器自包含，不依赖本机的 plugin-creator 辅助脚本。它先准备并检查新版本，再切换注册；迁移会注释旧 MCP 配置，将旧技能移到扫描目录之外。恢复副本保存在 `$CODEX_HOME/just-ask-me-backups/`（默认 `~/.codex/just-ask-me-backups/`）。失败时尝试恢复文件与注册；若 CLI 恢复失败，会明确报告并保留备份。旧插件源目录保留。含多行字符串的 TOML 配置需手动迁移，安装器会在写入前停止。
+安装器自包含，不依赖本机的 plugin-creator 辅助脚本。它先准备并检查新版本，再切换注册；同时在用户级 `$CODEX_HOME/AGENTS.md`（默认 `~/.codex/AGENTS.md`）维护一个带标记的简短规则，让必要提问优先使用卡片。重复安装只更新这一托管区块，不覆盖其他用户规则。迁移会注释旧 MCP 配置，将旧技能移到扫描目录之外。恢复副本保存在 `$CODEX_HOME/just-ask-me-backups/`（默认 `~/.codex/just-ask-me-backups/`）。失败时尝试恢复文件与注册；若 CLI 恢复失败，会明确报告并保留备份。旧插件源目录保留。含多行字符串的 TOML 配置需手动迁移，安装器会在写入前停止。
 
 > macOS / Linux 使用 `python3 install.py`；本次自动验收在 Windows 完成，其他系统仍需实机验证。
 
@@ -49,7 +49,7 @@ cd JustAskMe
 
 ## 日常怎么用
 
-不需要记任何命令。Codex 遇到该问的事会自己弹卡片。想让它更主动地问你：
+不需要记任何命令。内置的 **AskWithCard** 技能只改变提问方式：Codex 本来就需要问你时，会优先弹卡片，不会因此增加问题。想让它更主动地问你：
 
 - 说 **「讨论模式」** 或 **「边做边讨论」**——启用提问纪律：值得问的当场问、能自己查清的不烦你、答完立刻收束干活。这套纪律由内置的 **DiscussWithMe** 技能提供，详见[下文](#discusswithme-配套的讨论纪律)。
 - 说 **「快聊一下」「展开讨论」「挑战一下我的想法」「先收束」**——随时调整讨论深度。
@@ -70,7 +70,7 @@ cd JustAskMe
 | 表单弹出来了，提交却无效 | Codex 的 `tool_timeout_sec` 小于等待时间。设 600 以上，并 ≥ `HIM_TIMEOUT_MS/1000` |
 | 列表里没有 human_input 或 `disabled` | 路径不对。`node <那个路径>` 手动跑一下，出 `ready` 说明路径没问题 |
 | 表单弹了但浏览器没开（`http` 模式） | 无头环境。`HIM_HTTP_OPEN=0`，URL 仍会打到 stderr |
-| 模型从来不调这些工具 | 项目里没有提问纪律。把本仓库的 [AGENTS.md](AGENTS.md) 复制到你**项目**的根目录（见下） |
+| 模型从来不调这些工具 | 新建任务确认技能列表里有 `ask-with-card`，并运行 `human_input_status`；仍缺失时重新安装插件并重启 Codex。项目需要更强的主动提问纪律时，再复制本仓库的 [AGENTS.md](AGENTS.md) |
 
 **验证排障三板斧**（按可靠性）：
 
@@ -148,9 +148,19 @@ HIM_TIMEOUT_MS = "300000"
 
 ---
 
+## AskWithCard：默认的卡片路由
+
+内置的 **AskWithCard** 技能（`plugins/just-ask-me/skills/ask-with-card/`）默认允许隐式调用。它只在 Codex 已经判断需要向用户提问时，把普通文字问题路由到合适的 `human_input` 卡片；不会主动寻找更多决策点，也不会降低提问门槛。
+
+- 少量互斥候选使用 `ask_choice`；可能需要补充或提出替代方案时开启自由输入。
+- 是/否问题使用 `ask_confirm`，开放输入使用 `ask_text`，选择子集使用 `ask_multi_select`。
+- 卡片不可用时，退回普通文字提出同一个问题。
+
+这项默认能力与讨论模式相互独立。
+
 ## DiscussWithMe：配套的讨论纪律
 
-JustAskMe 服务器解决的是"**怎么问**"——弹卡片、等答案、状态可靠；本仓库内置的 **DiscussWithMe** 技能（`plugins/just-ask-me/skills/discuss-with-me/`）解决的是"**何时问、问什么**"——没有它，工具只是个能弹窗的嘴，有了它，Codex 才有提问的分寸。
+JustAskMe 服务器解决的是"**怎么问**"——弹卡片、等答案、状态可靠；**AskWithCard** 负责把已有问题路由到卡片；本仓库内置的 **DiscussWithMe** 技能（`plugins/just-ask-me/skills/discuss-with-me/`）则解决主动讨论时"**何时问、问什么**"。
 
 对 Codex 说「讨论模式」「边做边讨论」「重要选择先问我」即可激活（`$discuss-with-me` 亦同），当次会话内持续生效。它规定的核心纪律：
 
@@ -162,7 +172,7 @@ JustAskMe 服务器解决的是"**怎么问**"——弹卡片、等答案、状�
 - **围绕具体产物讨论**：抽象偏好难以表达时，做最小草稿或样例让你看效果再定，不用完整实现代替低成本示例。
 - **收束执行**：信息足够就立即开工，不添加"最后一个问题"；最终交付记录实际方案与假设，不把讨论过程写进成品。
 
-分工一句话：**服务器保证"问了必有答"，DiscussWithMe 保证"问得值得、答完就干"。**
+分工一句话：**服务器负责可靠交互，AskWithCard 负责默认用卡片，DiscussWithMe 负责主动讨论重要决策。**
 
 **脱离 Codex 也能用**：技能本身是纯提示词，宿主无关。把 `plugins/just-ask-me/skills/discuss-with-me/` 复制到 `~/.agents/skills/discuss-with-me/`，Claude Code、ZCode、Cursor 等同样扫描该目录的 agent 就能识别同一套纪律——在它们那里，"同步提问工具"自动指宿主原生的选择题卡片（如 `AskUserQuestion`），没有卡片的环境则按技能规则降级为普通文字提问。仓库根目录的这份即为唯一正典，改动后请同步运行副本。
 
@@ -198,9 +208,9 @@ JustAskMe/
 ├── src/                  # index(入口) server(tools+instructions) tools(提问流水线)
 │                         # elicitation(能力探测) forms(schema 转换) http-form(回退页)
 │                         # schemas/outcome(统一状态) config(HIM_* env) logger(stderr)
-├── test/                 # 44 个单元测试：schema 往返 / 四工具 / 取消归类 / 超时 / HTTP 回退端到端
+├── test/                 # 46 个单元测试：schema 往返 / 四工具 / 取消归类 / 超时 / HTTP 回退端到端
 ├── scripts/smoke-stdio.mjs   # 真实 stdio 子进程冒烟（--manual 人工模式）
-├── plugins/just-ask-me/  # 发布产物：单文件 server（内联全部依赖）+ discuss-with-me 技能
+├── plugins/just-ask-me/  # 发布产物：单文件 server + ask-with-card / discuss-with-me 技能
 ├── docs/codex-config.example.toml
 └── AGENTS.md             # 提问纪律（复制到你的项目根目录）
 ```

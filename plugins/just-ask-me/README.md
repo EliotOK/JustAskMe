@@ -2,10 +2,13 @@
 
 让 Codex 能主动向你发起**结构化提问**并等你回答，体验接近 Claude Code 的 `AskUserQuestion`。
 
-本目录是 Codex 插件本体，含两部分：
+本目录是 Codex 插件本体，含三部分：
 
 - **MCP server**（`server/index.mjs`）—— 提供 `ask_choice` / `ask_confirm` / `ask_text` / `ask_multi_select` / `human_input_status`
-- **技能**（`skills/discuss-with-me/`）—— 规定什么时候该问、什么时候自己决定
+- **自动卡片技能**（`skills/ask-with-card/`）—— 已经需要提问时，用卡片代替普通文字，不增加提问
+- **讨论模式技能**（`skills/discuss-with-me/`）—— 用户显式启用后，主动识别并征询重要决策
+
+仓库安装器还会在用户级 `$CODEX_HOME/AGENTS.md` 中维护一段带标记的卡片路由规则，作为隐式技能发现之外的全局提示。重复安装会原位更新，不覆盖用户的其他规则。
 
 ## 运行前提
 

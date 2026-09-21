@@ -2,7 +2,7 @@
   "name": "just-ask-me",
   "version": "0.3.0",
   "private": true,
-  "description": "Structured human-in-the-loop questions for OpenAI Codex CLI (and any MCP client) via MCP form elicitation, with a safe non-blocking fallback. Ships as a Codex plugin bundling a discuss-with-me skill.",
+  "description": "Structured human-in-the-loop questions for OpenAI Codex CLI (and any MCP client) via MCP form elicitation, with a safe non-blocking fallback. Ships with automatic card routing and an opt-in discussion skill.",
   "type": "module",
   "license": "MIT",
   "author": {

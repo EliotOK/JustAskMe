@@ -14,6 +14,16 @@ PLUGIN_NAME = 'just-ask-me'
 LEGACY_PLUGIN_NAME = 'codex-human-input-mcp'
 SERVER_KEY = 'human_input'
 SKILL_NAMES = ('discuss-with-me', 'discussion-mode')
+AGENTS_START = '<!-- just-ask-me:ask-with-card:start -->'
+AGENTS_END = '<!-- just-ask-me:ask-with-card:end -->'
+AGENTS_RULE = f'''{AGENTS_START}
+## JustAskMe 卡片提问
+
+当你已经判断确实需要向用户提问时，使用 `ask-with-card` 技能，
+通过 `human_input` 的对应 `ask_*` 工具显示互动卡片，而不是发送普通文字问题。
+
+这条规则只改变提问的呈现方式，不降低提问门槛，不主动增加问题，也不默认启用讨论模式。
+{AGENTS_END}'''
 
 
 def write_json(path, value):
@@ -50,6 +60,21 @@ def disable_manual(text):
     indices = set(server_lines(text))
     return '\n'.join('# ' + line if i in indices else line
                      for i, line in enumerate(text.splitlines())) + '\n'
+
+
+def add_agents_rule(text):
+    """Add or replace the installer-managed global routing rule."""
+    starts, ends = text.count(AGENTS_START), text.count(AGENTS_END)
+    if starts != ends or starts > 1:
+        raise ValueError('Malformed JustAskMe block in AGENTS.md; resolve it manually.')
+    newline = '\r\n' if text.count('\r\n') > text.count('\n') - text.count('\r\n') else '\n'
+    rule = AGENTS_RULE.replace('\n', newline)
+    if starts:
+        pattern = re.compile(re.escape(AGENTS_START) + r'.*?' + re.escape(AGENTS_END), re.S)
+        return pattern.sub(lambda _: rule, text)
+    if text and not text.endswith(('\n', '\r')):
+        text += newline
+    return text + (newline if text else '') + rule + newline
 
 
 def discover_skills(home, codex_home):
@@ -89,8 +114,10 @@ def install(home, codex_home, source, node, codex, migrate=False, run=subprocess
     target = home / 'plugins' / PLUGIN_NAME
     marketplace = home / '.agents/plugins/marketplace.json'
     config = codex_home / 'config.toml'
+    agents = codex_home / 'AGENTS.md'
     original_market = marketplace.read_bytes() if marketplace.exists() else None
     original_config = config.read_bytes() if config.exists() else None
+    original_agents = agents.read_bytes() if agents.exists() else None
     market = json.loads(original_market) if original_market else {
         'name': 'personal', 'interface': {'displayName': 'Personal'}, 'plugins': []}
     if not re.fullmatch(r'[A-Za-z0-9_-]+', market.get('name', '')) or not isinstance(market.get('plugins'), list):
@@ -124,12 +151,14 @@ def install(home, codex_home, source, node, codex, migrate=False, run=subprocess
     backup_root = codex_home / 'just-ask-me-backups'
     backup_root.mkdir(parents=True, exist_ok=True)
     backup = Path(tempfile.mkdtemp(prefix='install-', dir=backup_root))
-    for name, content in (('marketplace.json', original_market), ('config.toml', original_config)):
+    for name, content in (('marketplace.json', original_market), ('config.toml', original_config),
+                          ('AGENTS.md', original_agents)):
         if content is not None:
             (backup / name).write_bytes(content)
     write_json(backup / 'restore.json', {'target': str(target), 'marketplace': str(marketplace),
                'config': str(config), 'had_marketplace': original_market is not None,
-               'had_config': original_config is not None, 'skills': [str(p) for p in skills]})
+               'had_config': original_config is not None, 'agents': str(agents),
+               'had_agents': original_agents is not None, 'skills': [str(p) for p in skills]})
     stage = backup / PLUGIN_NAME
     shutil.copytree(source, stage)
     manifest_path = stage / '.codex-plugin/plugin.json'
@@ -141,8 +170,10 @@ def install(home, codex_home, source, node, codex, migrate=False, run=subprocess
     mcp = json.loads((stage / '.mcp.json').read_text(encoding='utf-8'))
     mcp['mcpServers'][SERVER_KEY]['command'] = node
     write_json(stage / '.mcp.json', mcp)
-    if not (stage / 'skills/discuss-with-me/SKILL.md').is_file():
-        raise ValueError('Packaged skill is missing.')
+    required_skills = ('ask-with-card', 'discuss-with-me')
+    missing_skills = [name for name in required_skills if not (stage / f'skills/{name}/SKILL.md').is_file()]
+    if missing_skills:
+        raise ValueError('Packaged skills are missing: ' + ', '.join(missing_skills))
     run([node, '--check', str(stage / 'server/index.mjs')], check=True, capture_output=True)
     if not current:
         entries.append({'name': PLUGIN_NAME, 'source': expected,
@@ -159,6 +190,10 @@ def install(home, codex_home, source, node, codex, migrate=False, run=subprocess
         stage.rename(target)
         swapped = True
         write_json(marketplace, market)
+        agents.parent.mkdir(parents=True, exist_ok=True)
+        agents_text = original_agents.decode('utf-8-sig') if original_agents else ''
+        agents_encoding = 'utf-8-sig' if original_agents and original_agents.startswith(b'\xef\xbb\xbf') else 'utf-8'
+        agents.write_bytes(add_agents_rule(agents_text).encode(agents_encoding))
         registration_attempted = True
         run([codex, 'plugin', 'add', f'{PLUGIN_NAME}@{market["name"]}'], check=True, env=env)
         if legacy:
@@ -200,12 +235,13 @@ def install(home, codex_home, source, node, codex, migrate=False, run=subprocess
         if legacy_attempted:
             recover(lambda: run([codex, 'plugin', 'add', f'{LEGACY_PLUGIN_NAME}@{market["name"]}'], check=True, env=env))
         recover(lambda: restore_file(config, original_config))
+        recover(lambda: restore_file(agents, original_agents))
         print(f'Installation failed. Recovery backups: {backup}', file=sys.stderr)
         if errors:
             print('Recovery needs attention: ' + '; '.join(errors), file=sys.stderr)
         raise
     print(f'Installed JustAskMe. Recovery backups: {backup}')
-    print('Open a NEW Codex task and run human_input_status, then try $discuss-with-me.')
+    print('Open a NEW Codex task and run human_input_status, then test an ordinary question and $discuss-with-me.')
     return backup
 
 

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Ask with Card"
+  short_description: "任务确实需要用户输入时，自动改用互动卡片完成提问"
+  default_prompt: "Use $ask-with-card whenever you need to ask me a question."
+policy:
+  allow_implicit_invocation: true
