@@ -98,7 +98,7 @@ cd JustAskMe
 
 | 工具 | 输入要点 | 返回 |
 | --- | --- | --- |
-| `ask_choice` | `question` + 2–25 个 `{label, description?}`（2–5 个最佳）；`default` 须精确匹配某 label；`allow_free_text` 加备注框；`timeout_ms` 覆盖等待 | `answer`/`selected` 为所选 label |
+| `ask_choice` | `question` + 2–25 个 `{label, description?}`（2–5 个最佳）；`default` 须精确匹配某 label；默认增加可点击的“自定义回答”，设置 `allow_free_text: false` 可关闭；`timeout_ms` 覆盖整次等待 | 预设选项在 `selected`，自定义回答在 `free_text` |
 | `ask_confirm` | `question`（写清对象和后果）；`default?` | `confirmed: boolean`，`answer` 为 `"yes"`/`"no"` |
 | `ask_text` | `question`；`placeholder?` 格式提示；`default?` | `answer`（已 trim） |
 | `ask_multi_select` | `question` + `options`；`min?`/`max?` 数量边界 | `selected: string[]`，`answer` 逗号连接 |
@@ -152,7 +152,7 @@ HIM_TIMEOUT_MS = "300000"
 
 内置的 **AskWithCard** 技能（`plugins/just-ask-me/skills/ask-with-card/`）默认允许隐式调用。它只在 Codex 已经判断需要向用户提问时，把普通文字问题路由到合适的 `human_input` 卡片；不会主动寻找更多决策点，也不会降低提问门槛。
 
-- 少量互斥候选使用 `ask_choice`；可能需要补充或提出替代方案时开启自由输入。
+- 少量互斥候选使用 `ask_choice`；默认保留自由输入选项。
 - 是/否问题使用 `ask_confirm`，开放输入使用 `ask_text`，选择子集使用 `ask_multi_select`。
 - 卡片不可用时，退回普通文字提出同一个问题。
 
@@ -226,8 +226,7 @@ MIT。
 
 ## 自由回答与发布验证
 
-`ask_choice` 开启 `allow_free_text` 后，用户可只填写文字，不必选择预设方案。
-仅文字返回 `discussion`；有选项的提交仍返回 `answered`。模型应结合完整文字理解回复，
+`ask_choice` 默认在第一张同步 MCP 卡片增加可点击的“自定义回答”。预设选项直接返回 `answered`；选择“自定义回答”才打开第二张文字输入卡，原题和选项会在卡片中重现，提交后返回 `discussion`。模型应结合完整文字理解回复，
 先处理追问和“暂不执行”等限制，不能把任一提交自动视为操作授权。
 HTTP 备用表单会按多选数量校验；无效提交保留页面和已填内容，修正后可继续提交。
 

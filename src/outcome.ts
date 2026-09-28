@@ -65,7 +65,7 @@ export type FormQuestion =
 export interface FormAnswer {
   /** Selected label(s). Zero or one for `choice`, empty for `confirm`/`text`. */
   selected: string[];
-  /** Free-text companion for `choice` when `allowFreeText` was set. */
+  /** Custom reply for `choice` when `allowFreeText` was set. */
   freeText: string | null;
   /** `confirm` only. */
   confirmed: boolean | null;

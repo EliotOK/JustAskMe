@@ -23,7 +23,7 @@ import type {
 import { SERVER_NAME, SERVER_VERSION } from './config.js';
 import type { ServerConfig } from './config.js';
 import { clientSupportsFormElicitation, requestFormInput } from './elicitation.js';
-import { buildFormRequest, interpretContent } from './forms.js';
+import { buildCustomReplyRequest, buildFormRequest, customChoiceLabel, interpretContent } from './forms.js';
 import { serveForm } from './http-form.js';
 import { log } from './logger.js';
 import type { AnswerVia, AskResult, AskStatus, FormAnswer, FormQuestion } from './outcome.js';
@@ -76,7 +76,7 @@ export function renderForAgent(question: FormQuestion): string {
   switch (question.kind) {
     case 'choice':
       header.push('', 'Options:', ...options);
-      if (question.allowFreeText) header.push('', '(the user may also add free-text notes)');
+      if (question.allowFreeText) header.push('', '(the user may choose a custom reply)');
       if (question.defaultValue !== undefined) header.push(`(suggested default: ${question.defaultValue})`);
       break;
     case 'confirm':
@@ -119,7 +119,7 @@ function withAnswer(
   started: number
 ): AskOutcome {
   const text = answerText(question, answer);
-  const note = answer.freeText ? ` The user added: "${answer.freeText}"` : '';
+  const note = answer.selected.length > 0 && answer.freeText ? ` The user added: "${answer.freeText}"` : '';
   return {
     result: {
       ...base,
@@ -200,7 +200,22 @@ export async function runQuestion(
   // ---- 1. Native MCP form elicitation -------------------------------------
   if (base.client_elicitation) {
     const request = buildFormRequest(question, config.multiSelectMode);
-    const outcome = await requestFormInput(server, request, { timeoutMs, signal: extra.signal });
+    let outcome = await requestFormInput(server, request, { timeoutMs, signal: extra.signal });
+
+    if (question.kind === 'choice' && question.allowFreeText &&
+        outcome.ok && outcome.action === 'accept' &&
+        outcome.content['choice'] === customChoiceLabel(question)) {
+      const remainingMs = timeoutMs - (Date.now() - started);
+      if (remainingMs <= 0) {
+        return withStatus(base, 'timeout', 'elicitation', started,
+          `No answer after ${timeoutMs}ms; the question timed out.`,
+          'The custom reply was not submitted within the time limit.');
+      }
+      outcome = await requestFormInput(server, buildCustomReplyRequest(question), {
+        timeoutMs: remainingMs,
+        signal: extra.signal
+      });
+    }
 
     if (outcome.ok && outcome.action === 'accept') {
       const interpreted = interpretContent(question, outcome.content, config.multiSelectMode);
@@ -417,8 +432,8 @@ export function registerTools(server: McpServer, config: ServerConfig): void {
         'Ask the user to choose exactly one of 2-25 options and wait for the answer.',
         'Use this when a decision has a small set of genuinely viable alternatives and the choice changes what you build — for example an architecture, a library, a naming scheme, or a file layout.',
         'Prefer this over ask_confirm whenever the real answer is a choice rather than yes/no, and over ask_text whenever the reasonable answers can be enumerated.',
-        'The user may additionally leave free-text notes when allow_free_text is true.',
-        'Returns the selected option label in `answer`/`selected`.'
+        'A clickable custom option is included by default. Set allow_free_text false to omit it. Selecting the custom option opens a second text form during the same synchronous tool call.',
+        'Returns a selected option in `answer`/`selected`, or a custom reply in `free_text`.'
       ].join(' '),
       inputSchema: askChoiceInputSchema,
       outputSchema: askResultShape,
@@ -429,7 +444,7 @@ export function registerTools(server: McpServer, config: ServerConfig): void {
         kind: 'choice',
         question: input.question,
         options: input.options,
-        allowFreeText: input.allow_free_text ?? false,
+        allowFreeText: input.allow_free_text ?? true,
         ...(input.default !== undefined ? { defaultValue: input.default } : {})
       };
       if (duplicateLabel(input.options)) {

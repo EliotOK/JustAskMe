@@ -1,7 +1,7 @@
 {
   "name": "just-ask-me",
-  "version": "0.3.0",
-  "description": "让 Codex 在确实需要提问时自动使用结构化卡片，并提供可选的 discuss-with-me 讨论模式。",
+  "version": "0.3.0+codex.20260928181923",
+  "description": "\u8ba9 Codex \u5728\u786e\u5b9e\u9700\u8981\u63d0\u95ee\u65f6\u81ea\u52a8\u4f7f\u7528\u7ed3\u6784\u5316\u5361\u7247\uff0c\u5e76\u63d0\u4f9b\u53ef\u9009\u7684 discuss-with-me \u8ba8\u8bba\u6a21\u5f0f\u3002",
   "author": {
     "name": "EliotOK",
     "url": "https://github.com/EliotOK"
@@ -19,17 +19,17 @@
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "interface": {
-    "displayName": "JustAskMe · 结构化提问",
-    "shortDescription": "弹出表单问用户，等到答案再继续",
-    "longDescription": "通过 MCP form elicitation 在 Codex 界面弹出结构化表单并阻塞等待回答，提供 ask_choice / ask_confirm / ask_text / ask_multi_select 四个工具。ask-with-card 技能会在 Codex 已经需要提问时自动改用卡片，不增加提问；discuss-with-me 则作为可选讨论模式，主动征询重要决策。客户端不支持 elicitation 时按 HIM_FALLBACK 降级为对话提问或本地表单页。",
+    "displayName": "JustAskMe \u00b7 \u7ed3\u6784\u5316\u63d0\u95ee",
+    "shortDescription": "\u5f39\u51fa\u8868\u5355\u95ee\u7528\u6237\uff0c\u7b49\u5230\u7b54\u6848\u518d\u7ee7\u7eed",
+    "longDescription": "\u901a\u8fc7 MCP form elicitation \u5728 Codex \u754c\u9762\u5f39\u51fa\u7ed3\u6784\u5316\u8868\u5355\u5e76\u963b\u585e\u7b49\u5f85\u56de\u7b54\uff0c\u63d0\u4f9b ask_choice / ask_confirm / ask_text / ask_multi_select \u56db\u4e2a\u5de5\u5177\u3002ask-with-card \u6280\u80fd\u4f1a\u5728 Codex \u5df2\u7ecf\u9700\u8981\u63d0\u95ee\u65f6\u81ea\u52a8\u6539\u7528\u5361\u7247\uff0c\u4e0d\u589e\u52a0\u63d0\u95ee\uff1bdiscuss-with-me \u5219\u4f5c\u4e3a\u53ef\u9009\u8ba8\u8bba\u6a21\u5f0f\uff0c\u4e3b\u52a8\u5f81\u8be2\u91cd\u8981\u51b3\u7b56\u3002\u5ba2\u6237\u7aef\u4e0d\u652f\u6301 elicitation \u65f6\u6309 HIM_FALLBACK \u964d\u7ea7\u4e3a\u5bf9\u8bdd\u63d0\u95ee\u6216\u672c\u5730\u8868\u5355\u9875\u3002",
     "developerName": "EliotOK",
     "category": "Productivity",
     "capabilities": [
       "Interactive"
     ],
     "defaultPrompt": [
-      "需要向我提问时，用互动卡片而不是普通文字",
-      "用 $discuss-with-me 边做边确认关键选择"
+      "\u9700\u8981\u5411\u6211\u63d0\u95ee\u65f6\uff0c\u7528\u4e92\u52a8\u5361\u7247\u800c\u4e0d\u662f\u666e\u901a\u6587\u5b57",
+      "\u7528 $discuss-with-me \u8fb9\u505a\u8fb9\u786e\u8ba4\u5173\u952e\u9009\u62e9"
     ],
     "brandColor": "#7C5CFF"
   }

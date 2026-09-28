@@ -45,8 +45,10 @@ question to verify the UI.
 
 ## Tools and discussion
 
-- `ask_choice`: select an option; with `allow_free_text`, submit a text reply or
-  clarification question even without selecting an option.
+- `ask_choice`: select an option; the first synchronous MCP form includes a
+  clickable custom option by default. Set `allow_free_text: false` to omit it.
+  Only the custom option opens a text form, which repeats the original question
+  and options.
 - `ask_confirm`: submit yes/no.
 - `ask_text`: submit text.
 - `ask_multi_select`: select a bounded subset.

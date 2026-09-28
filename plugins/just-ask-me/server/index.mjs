@@ -36652,20 +36652,65 @@ function describeOption(index, option) {
 function optionBlock(options) {
   return options.map((option, index) => describeOption(index, option)).join("\n");
 }
+function isChinese(question) {
+  return /[\u3400-\u9fff]/u.test(question);
+}
+function customChoiceLabel(question) {
+  const base = isChinese(question.question) ? "\u81EA\u5B9A\u4E49\u56DE\u7B54" : "Custom reply";
+  const labels = new Set(question.options.map((option) => option.label.trim().toLowerCase()));
+  let label = base;
+  for (let suffix = 2; labels.has(label.toLowerCase()); suffix += 1) {
+    label = `${base} (${suffix})`;
+  }
+  return label;
+}
+function buildCustomReplyRequest(question) {
+  const chinese = isChinese(question.question);
+  return {
+    message: [
+      question.question,
+      "",
+      chinese ? "\u539F\u9009\u9879\uFF1A" : "Original options:",
+      optionBlock(question.options),
+      "",
+      chinese ? "\u8BF7\u586B\u5199\u81EA\u5B9A\u4E49\u56DE\u7B54\u6216\u95EE\u9898\u3002" : "Enter your custom reply or question."
+    ].join("\n"),
+    requestedSchema: asRequestedSchema({
+      type: "object",
+      properties: {
+        free_text: {
+          type: "string",
+          title: chinese ? "\u81EA\u5B9A\u4E49\u56DE\u7B54" : "Custom reply",
+          description: chinese ? "\u586B\u5199\u4F60\u7684\u56DE\u7B54\u6216\u95EE\u9898\u3002" : "Enter your reply or question.",
+          minLength: 1
+        }
+      },
+      required: ["free_text"]
+    })
+  };
+}
 function buildFormRequest(question, multiSelectMode) {
   switch (question.kind) {
     case "choice": {
       const labels = question.options.map((option) => option.label);
-      const lines = [question.question, "", "Options:", optionBlock(question.options), "", question.allowFreeText ? "Choose an option or reply in text." : "Choose exactly one option."];
-      if (question.allowFreeText) {
-        lines.push("You may leave the choice unset and reply or ask a question in the free-text field.");
-      }
+      const chinese = isChinese(question.question);
+      const customLabel = question.allowFreeText ? customChoiceLabel(question) : null;
+      if (customLabel) labels.push(customLabel);
+      const listedOptions = customLabel ? [...question.options, { label: customLabel }] : question.options;
+      const lines = [
+        question.question,
+        "",
+        chinese ? "\u9009\u9879\uFF1A" : "Options:",
+        optionBlock(listedOptions),
+        "",
+        customLabel ? chinese ? "\u9009\u62E9\u201C\u81EA\u5B9A\u4E49\u56DE\u7B54\u201D\u540E\u586B\u5199\u6587\u5B57\u3002" : "Select the custom option to enter text." : chinese ? "\u8BF7\u9009\u62E9\u4E00\u9879\u3002" : "Choose exactly one option."
+      ];
       if (question.defaultValue !== void 0) {
-        lines.push(`Default: ${question.defaultValue}`);
+        lines.push(`${chinese ? "\u9ED8\u8BA4\uFF1A" : "Default: "}${question.defaultValue}`);
       }
       const choiceProperty = {
         type: "string",
-        title: "Your choice",
+        title: chinese ? "\u4F60\u7684\u9009\u62E9" : "Your choice",
         description: question.question,
         enum: labels,
         enumNames: labels
@@ -36673,20 +36718,12 @@ function buildFormRequest(question, multiSelectMode) {
       if (question.defaultValue !== void 0) {
         choiceProperty["default"] = question.defaultValue;
       }
-      const properties = { choice: choiceProperty };
-      if (question.allowFreeText) {
-        properties["free_text"] = {
-          type: "string",
-          title: "Your reply or question",
-          description: "Optional free-text answer or extra context."
-        };
-      }
       return {
         message: lines.join("\n"),
         requestedSchema: asRequestedSchema({
           type: "object",
-          properties,
-          required: question.allowFreeText ? [] : ["choice"]
+          properties: { choice: choiceProperty },
+          required: ["choice"]
         })
       };
     }
@@ -37234,7 +37271,7 @@ var askChoiceInputSchema = {
   ),
   default: external_exports.string().max(200).optional().describe("Optional label of the recommended option. Must exactly match one of the provided labels."),
   allow_free_text: external_exports.boolean().optional().describe(
-    "Set true to also show an optional free-text field alongside the options, letting the user reply or ask a question without selecting an option."
+    "Defaults to true, adding a clickable custom-reply option. Set false to omit it. Selecting the custom option opens a second text form within the same synchronous tool call."
   ),
   timeout_ms: timeoutField
 };
@@ -37278,7 +37315,7 @@ var askResultShape = {
   message: external_exports.string().describe("Human-readable summary, including options when the question is still unanswered."),
   next_step: external_exports.string().describe("What you should do next. Follow it."),
   answer: external_exports.string().nullable().describe('The answer as a string: chosen label, "yes"/"no", or the typed text.'),
-  free_text: external_exports.string().nullable().describe("Optional free-text note supplied alongside a choice."),
+  free_text: external_exports.string().nullable().describe("Custom reply submitted instead of a preset choice; the HTTP fallback may also supply a note."),
   selected: external_exports.array(external_exports.string()).describe("Selected labels; zero or one for ask_choice, N for ask_multi_select."),
   confirmed: external_exports.boolean().nullable().describe("ask_confirm only: true for yes, false for no."),
   client_elicitation: external_exports.boolean().describe("Whether the connected client declared MCP form-elicitation support during initialize."),
@@ -37311,7 +37348,7 @@ function renderForAgent(question) {
   switch (question.kind) {
     case "choice":
       header.push("", "Options:", ...options);
-      if (question.allowFreeText) header.push("", "(the user may also add free-text notes)");
+      if (question.allowFreeText) header.push("", "(the user may choose a custom reply)");
       if (question.defaultValue !== void 0) header.push(`(suggested default: ${question.defaultValue})`);
       break;
     case "confirm":
@@ -37346,7 +37383,7 @@ function answerText(question, answer) {
 }
 function withAnswer(base, question, answer, via, started) {
   const text = answerText(question, answer);
-  const note = answer.freeText ? ` The user added: "${answer.freeText}"` : "";
+  const note = answer.selected.length > 0 && answer.freeText ? ` The user added: "${answer.freeText}"` : "";
   return {
     result: {
       ...base,
@@ -37392,7 +37429,24 @@ async function runQuestion(tool, question, timeoutMs, args) {
   let failure2 = null;
   if (base.client_elicitation) {
     const request = buildFormRequest(question, config2.multiSelectMode);
-    const outcome = await requestFormInput(server, request, { timeoutMs, signal: extra.signal });
+    let outcome = await requestFormInput(server, request, { timeoutMs, signal: extra.signal });
+    if (question.kind === "choice" && question.allowFreeText && outcome.ok && outcome.action === "accept" && outcome.content["choice"] === customChoiceLabel(question)) {
+      const remainingMs = timeoutMs - (Date.now() - started);
+      if (remainingMs <= 0) {
+        return withStatus(
+          base,
+          "timeout",
+          "elicitation",
+          started,
+          `No answer after ${timeoutMs}ms; the question timed out.`,
+          "The custom reply was not submitted within the time limit."
+        );
+      }
+      outcome = await requestFormInput(server, buildCustomReplyRequest(question), {
+        timeoutMs: remainingMs,
+        signal: extra.signal
+      });
+    }
     if (outcome.ok && outcome.action === "accept") {
       const interpreted = interpretContent(question, outcome.content, config2.multiSelectMode);
       if (interpreted.ok) {
@@ -37588,8 +37642,8 @@ function registerTools(server, config2) {
         "Ask the user to choose exactly one of 2-25 options and wait for the answer.",
         "Use this when a decision has a small set of genuinely viable alternatives and the choice changes what you build \u2014 for example an architecture, a library, a naming scheme, or a file layout.",
         "Prefer this over ask_confirm whenever the real answer is a choice rather than yes/no, and over ask_text whenever the reasonable answers can be enumerated.",
-        "The user may additionally leave free-text notes when allow_free_text is true.",
-        "Returns the selected option label in `answer`/`selected`."
+        "A clickable custom option is included by default. Set allow_free_text false to omit it. Selecting the custom option opens a second text form during the same synchronous tool call.",
+        "Returns a selected option in `answer`/`selected`, or a custom reply in `free_text`."
       ].join(" "),
       inputSchema: askChoiceInputSchema,
       outputSchema: askResultShape,
@@ -37600,7 +37654,7 @@ function registerTools(server, config2) {
         kind: "choice",
         question: input2.question,
         options: input2.options,
-        allowFreeText: input2.allow_free_text ?? false,
+        allowFreeText: input2.allow_free_text ?? true,
         ...input2.default !== void 0 ? { defaultValue: input2.default } : {}
       };
       if (duplicateLabel(input2.options)) {

@@ -3,17 +3,18 @@
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import type { ElicitResult } from '@modelcontextprotocol/sdk/types.js';
 import { interpretContent } from '../src/forms.js';
 import type { FormQuestion } from '../src/outcome.js';
 import { askResultSchema } from '../src/schemas.js';
-import { callTool, startHarness } from './helpers.js';
+import { callTool, delay, startHarness } from './helpers.js';
 
 describe('ask_choice over MCP form elicitation', () => {
-  it('returns the human’s selection, the free-text note, and an answered status', async () => {
+  it('returns a selected option after one clickable form', async () => {
     const harness = await startHarness({
       onElicit: () => ({
         action: 'accept',
-        content: { choice: 'document', free_text: 'the second one, but keep the changelog short' }
+        content: { choice: 'document' }
       })
     });
     try {
@@ -25,7 +26,6 @@ describe('ask_choice over MCP form elicitation', () => {
             { label: 'site', description: 'The public docs site.' },
             { label: 'document', description: 'A DOCUMENT.md in the repo root.' }
           ],
-          allow_free_text: true,
           timeout_ms: 5_000
         }
       });
@@ -34,7 +34,7 @@ describe('ask_choice over MCP form elicitation', () => {
       assert.equal(call.ask.via, 'elicitation');
       assert.equal(call.ask.answer, 'document');
       assert.deepStrictEqual(call.ask.selected, ['document']);
-      assert.equal(call.ask.free_text, 'the second one, but keep the changelog short');
+      assert.equal(call.ask.free_text, null);
       assert.equal(call.ask.confirmed, null);
       assert.equal(call.ask.client_elicitation, true);
       assert.equal(call.ask.form_url, null);
@@ -50,12 +50,39 @@ describe('ask_choice over MCP form elicitation', () => {
         properties: Record<string, { enum?: string[] }>;
         required?: string[];
       };
-      assert.deepStrictEqual(schema.properties['choice']?.enum, ['site', 'document']);
-      assert.deepStrictEqual(schema.required, []);
+      assert.deepStrictEqual(Object.keys(schema.properties), ['choice']);
+      assert.deepStrictEqual(schema.properties['choice']?.enum, ['site', 'document', 'Custom reply']);
+      assert.deepStrictEqual(schema.required, ['choice']);
       assert.match(sent.message, /site — The public docs site\./, 'option descriptions are inlined into the prompt');
     } finally {
       await harness.close();
     }
+  });
+
+  it('returns the first option without opening a text form', async () => {
+    const harness = await startHarness({ onElicit: () => ({ action: 'accept', content: { choice: 'first' } }) });
+    try {
+      const { ask } = await callTool(harness.client, { name: 'ask_choice', arguments: {
+        question: 'Which one?', options: [{ label: 'first' }, { label: 'second' }], allow_free_text: true
+      } });
+      assert.equal(ask.status, 'answered');
+      assert.deepStrictEqual(ask.selected, ['first']);
+      assert.equal(ask.free_text, null);
+      assert.equal(harness.seen.length, 1);
+    } finally { await harness.close(); }
+  });
+
+  it('omits the custom option when free text is explicitly disabled', async () => {
+    const harness = await startHarness({ onElicit: () => ({ action: 'accept', content: { choice: 'first' } }) });
+    try {
+      const { ask } = await callTool(harness.client, { name: 'ask_choice', arguments: {
+        question: 'Which one?', options: [{ label: 'first' }, { label: 'second' }], allow_free_text: false
+      } });
+      assert.equal(ask.status, 'answered');
+      assert.equal(harness.seen.length, 1);
+      assert.deepEqual((harness.seen[0]!.requestedSchema.properties['choice'] as { enum?: string[] })?.enum,
+        ['first', 'second']);
+    } finally { await harness.close(); }
   });
 
   it('reports invalid_response when the submitted choice is not one of the offered labels', async () => {
@@ -271,17 +298,110 @@ describe('ask_multi_select over MCP form elicitation', () => {
 
 describe('free-text discussion', () => {
   for (const reply of ['Explain the difference first', 'Use a third approach']) {
-    it(`preserves a text-only reply: ${reply}`, async () => {
-      const harness = await startHarness({ onElicit: () => ({ action: 'accept', content: { free_text: reply } }) });
+    it(`opens a second form only for the custom option: ${reply}`, async () => {
+      let callCount = 0;
+      const harness = await startHarness({ onElicit: (): ElicitResult => {
+        callCount += 1;
+        return callCount === 1
+          ? { action: 'accept', content: { choice: 'Custom reply' } }
+          : { action: 'accept', content: { free_text: reply } };
+      } });
       try {
         const { ask } = await callTool(harness.client, { name: 'ask_choice', arguments: {
-          question: 'Which approach?', options: [{ label: 'A' }, { label: 'B' }], allow_free_text: true
+          question: 'Which approach?', options: [{ label: 'A' }, { label: 'B' }]
         } });
         assert.equal(ask.status, 'discussion');
         assert.deepEqual(ask.selected, []);
         assert.equal(ask.free_text, reply);
+        assert.equal(harness.seen.length, 2);
+        assert.deepEqual(Object.keys(harness.seen[0]!.requestedSchema.properties), ['choice']);
+        assert.deepEqual(Object.keys(harness.seen[1]!.requestedSchema.properties), ['free_text']);
+        assert.match(harness.seen[1]!.message, /^Which approach\?/);
+        assert.match(harness.seen[1]!.message, /Original options:\n  1\. A\n  2\. B/);
         assert.match(ask.next_step, /clarification/);
       } finally { await harness.close(); }
     });
   }
+
+  it('shows Chinese text on both forms for a Chinese question', async () => {
+    let callCount = 0;
+    const harness = await startHarness({ onElicit: (): ElicitResult => {
+      callCount += 1;
+      return callCount === 1
+        ? { action: 'accept', content: { choice: '自定义回答' } }
+        : { action: 'accept', content: { free_text: '我想先了解区别' } };
+    } });
+    try {
+      const { ask } = await callTool(harness.client, { name: 'ask_choice', arguments: {
+        question: '先处理哪一项？', options: [{ label: '第一项' }, { label: '第二项' }]
+      } });
+      assert.equal(ask.status, 'discussion');
+      assert.equal(ask.free_text, '我想先了解区别');
+      assert.equal(harness.seen.length, 2);
+      assert.deepEqual((harness.seen[0]!.requestedSchema.properties['choice'] as { enum?: string[] })?.enum,
+        ['第一项', '第二项', '自定义回答']);
+      assert.match(harness.seen[0]!.message, /选项：/);
+      assert.match(harness.seen[1]!.message, /^先处理哪一项？/);
+      assert.match(harness.seen[1]!.message, /原选项：\n  1\. 第一项\n  2\. 第二项/);
+      assert.match(harness.seen[1]!.message, /请填写自定义回答/);
+      assert.doesNotMatch(harness.seen.map(item => item.message).join(' '), /Options:|Your reply|Choose an option/);
+    } finally { await harness.close(); }
+  });
+
+  it('rejects a blank custom reply', async () => {
+    let callCount = 0;
+    const harness = await startHarness({ onElicit: (): ElicitResult => {
+      callCount += 1;
+      return callCount === 1
+        ? { action: 'accept', content: { choice: 'Custom reply' } }
+        : { action: 'accept', content: { free_text: '   ' } };
+    } });
+    try {
+      const { ask } = await callTool(harness.client, { name: 'ask_choice', arguments: {
+        question: 'Which one?', options: [{ label: 'A' }, { label: 'B' }], allow_free_text: true
+      } });
+      assert.equal(ask.status, 'invalid_response');
+      assert.equal(harness.seen.length, 2);
+    } finally { await harness.close(); }
+  });
+
+  for (const action of ['cancel', 'decline'] as const) {
+    it(`propagates ${action} from the custom reply form`, async () => {
+      let callCount = 0;
+      const harness = await startHarness({ onElicit: () => {
+        callCount += 1;
+        return callCount === 1
+          ? { action: 'accept', content: { choice: 'Custom reply' } }
+          : { action };
+      } });
+      try {
+        const { ask } = await callTool(harness.client, { name: 'ask_choice', arguments: {
+          question: 'Which one?', options: [{ label: 'A' }, { label: 'B' }], allow_free_text: true
+        } });
+        assert.equal(ask.status, action === 'cancel' ? 'cancelled' : 'declined');
+        assert.equal(harness.seen.length, 2);
+      } finally { await harness.close(); }
+    });
+  }
+
+  it('shares the timeout across both forms', async () => {
+    let callCount = 0;
+    const harness = await startHarness({ onElicit: async () => {
+      callCount += 1;
+      if (callCount === 1) {
+        await delay(600);
+        return { action: 'accept', content: { choice: 'Custom reply' } };
+      }
+      return await new Promise<never>(() => undefined);
+    } });
+    try {
+      const { ask } = await callTool(harness.client, { name: 'ask_choice', arguments: {
+        question: 'Which one?', options: [{ label: 'A' }, { label: 'B' }], allow_free_text: true,
+        timeout_ms: 1_200
+      } });
+      assert.equal(ask.status, 'timeout');
+      assert.equal(harness.seen.length, 2);
+      assert.ok(ask.elapsed_ms < 1_600, `both forms exceeded the shared budget: ${ask.elapsed_ms}ms`);
+    } finally { await harness.close(); }
+  });
 });

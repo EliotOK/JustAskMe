@@ -55,7 +55,7 @@ export const askChoiceInputSchema = {
     .boolean()
     .optional()
     .describe(
-      'Set true to also show an optional free-text field alongside the options, letting the user reply or ask a question without selecting an option.'
+      'Defaults to true, adding a clickable custom-reply option. Set false to omit it. Selecting the custom option opens a second text form within the same synchronous tool call.'
     ),
   timeout_ms: timeoutField
 };
@@ -141,7 +141,7 @@ export const askResultShape = {
   message: z.string().describe('Human-readable summary, including options when the question is still unanswered.'),
   next_step: z.string().describe('What you should do next. Follow it.'),
   answer: z.string().nullable().describe('The answer as a string: chosen label, "yes"/"no", or the typed text.'),
-  free_text: z.string().nullable().describe('Optional free-text note supplied alongside a choice.'),
+  free_text: z.string().nullable().describe('Custom reply submitted instead of a preset choice; the HTTP fallback may also supply a note.'),
   selected: z.array(z.string()).describe('Selected labels; zero or one for ask_choice, N for ask_multi_select.'),
   confirmed: z.boolean().nullable().describe('ask_confirm only: true for yes, false for no.'),
   client_elicitation: z

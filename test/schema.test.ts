@@ -12,7 +12,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { ElicitRequestFormParamsSchema } from '@modelcontextprotocol/sdk/types.js';
-import { buildFormRequest } from '../src/forms.js';
+import { buildCustomReplyRequest, buildFormRequest } from '../src/forms.js';
 import type { FormQuestion } from '../src/outcome.js';
 import { askResultSchema } from '../src/schemas.js';
 import { asAskResult, callTool, startHarness } from './helpers.js';
@@ -73,26 +73,42 @@ function roundTrip(question: FormQuestion, mode: 'array' | 'text' = 'array'): Lo
 }
 
 describe('elicitation schema round-trip', () => {
-  it('ask_choice survives the SDK parser with enum, enumNames and free text intact', () => {
+  it('ask_choice with free text adds one clickable custom option', () => {
     const schema = roundTrip(CHOICE);
     assert.equal(schema.type, 'object');
-    assert.deepStrictEqual(schema.required, []);
+    assert.deepStrictEqual(schema.required, ['choice']);
 
     const choice = schema.properties?.['choice'];
     assert.ok(choice, 'choice property is present');
     assert.equal(choice['type'], 'string');
-    assert.deepStrictEqual(choice['enum'], ['pnpm', 'npm']);
-    assert.deepStrictEqual(choice['enumNames'], ['pnpm', 'npm'], 'enumNames must not be stripped');
+    assert.deepStrictEqual(choice['enum'], ['pnpm', 'npm', 'Custom reply']);
+    assert.deepStrictEqual(choice['enumNames'], ['pnpm', 'npm', 'Custom reply']);
     assert.equal(choice['default'], 'pnpm');
-
-    const freeText = schema.properties?.['free_text'];
-    assert.ok(freeText, 'free_text property is present when allow_free_text is set');
-    assert.equal(freeText['type'], 'string');
+    assert.deepStrictEqual(Object.keys(schema.properties ?? {}), ['choice']);
   });
 
-  it('omits free_text when allow_free_text is not requested', () => {
+  it('keeps only caller choices when free text is disabled', () => {
     const schema = roundTrip({ ...CHOICE, allowFreeText: false });
-    assert.equal(schema.properties?.['free_text'], undefined);
+    assert.deepStrictEqual(Object.keys(schema.properties ?? {}), ['choice']);
+    assert.deepStrictEqual(schema.properties?.['choice']?.['enum'], ['pnpm', 'npm']);
+    assert.deepStrictEqual(schema.properties?.['choice']?.['enumNames'], ['pnpm', 'npm']);
+  });
+
+  it('the custom reply form survives the SDK parser as one required text field', () => {
+    const request = buildCustomReplyRequest(CHOICE as Extract<FormQuestion, { kind: 'choice' }>);
+    const params = { mode: 'form' as const, ...request };
+    assert.deepStrictEqual(ElicitRequestFormParamsSchema.parse(params), params);
+    const schema = request.requestedSchema as unknown as LooseSchema;
+    assert.deepStrictEqual(Object.keys(schema.properties ?? {}), ['free_text']);
+    assert.deepStrictEqual(schema.required, ['free_text']);
+    assert.equal(schema.properties?.['free_text']?.['type'], 'string');
+    assert.match(request.message, /^Which package manager/);
+    assert.match(request.message, /Original options:/);
+  });
+
+  it('uses a distinct custom label when a caller option has the same name', () => {
+    const schema = roundTrip({ ...CHOICE, options: [{ label: 'Custom reply' }, { label: 'npm' }] });
+    assert.deepStrictEqual(schema.properties?.['choice']?.['enum'], ['Custom reply', 'npm', 'Custom reply (2)']);
   });
 
   it('ask_confirm survives the SDK parser as a boolean field', () => {
