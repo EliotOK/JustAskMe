@@ -45,14 +45,13 @@ question to verify the UI.
 
 ## Tools and discussion
 
-- `ask_choice`: select an option; the first synchronous MCP form includes a
-  clickable custom option by default. Set `allow_free_text: false` to omit it.
-  Only the custom option opens a text form, which repeats the original question
-  and options.
+- `ask_choice`: choose an option, write a reply, or submit both on the same card.
+  Set `allow_free_text: false` to require a preset option.
 - `ask_confirm`: submit yes/no.
 - `ask_text`: submit text.
 - `ask_multi_select`: select a bounded subset.
 - `human_input_status`: inspect capabilities and configuration.
+- `check_for_updates`: ask “Check JustAskMe for updates” to compare your installed version with the latest stable GitHub release and get its link. The check runs on demand.
 
 A text-only choice reply returns `discussion`, with no selected option. The agent
 must interpret the text: answer clarification requests first, or adopt an explicit

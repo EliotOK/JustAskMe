@@ -4,11 +4,13 @@
 
 本目录是 Codex 插件本体，含三部分：
 
-- **MCP server**（`server/index.mjs`）—— 提供 `ask_choice` / `ask_confirm` / `ask_text` / `ask_multi_select` / `human_input_status`
+- **MCP server**（`server/index.mjs`）—— 提供 `ask_choice` / `ask_confirm` / `ask_text` / `ask_multi_select` / `human_input_status` / `check_for_updates`
 - **自动卡片技能**（`skills/ask-with-card/`）—— 已经需要提问时，用卡片代替普通文字，不增加提问
 - **讨论模式技能**（`skills/discuss-with-me/`）—— 用户显式启用后，主动识别并征询重要决策
 
 仓库安装器还会在用户级 `$CODEX_HOME/AGENTS.md` 中维护一段带标记的卡片路由规则，作为隐式技能发现之外的全局提示。重复安装会原位更新，不覆盖用户的其他规则。
+
+在插件页选择「检查 JustAskMe 更新」，或直接在聊天中发送同一句话。插件会查询 GitHub 最新正式版，返回本机版本、最新版本和发布链接。
 
 ## 运行前提
 
@@ -26,7 +28,8 @@
     "human_input": {
       "command": "node",
       "args": ["./server/index.mjs"],
-      "cwd": "."
+      "cwd": ".",
+      "tool_timeout_sec": 310
     }
   }
 }
@@ -49,4 +52,4 @@
 
 见仓库根目录的 `README.md`。
 
-`ask_choice` 默认在第一张同步 MCP 卡片增加可点击的“自定义回答”（设置 `allow_free_text: false` 可关闭）。选择预设选项直接返回 `answered`；只有选择“自定义回答”才打开第二张输入卡，原题和选项会在卡片中重现，提交后返回 `discussion`，模型先理解或解释回复。
+`ask_choice` 默认在同一张卡片显示选项和文字输入框，可只选、只写或同时提交。设置 `allow_free_text: false` 时仅接受预设选项。

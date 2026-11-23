@@ -237,3 +237,7 @@ Windows / Node 24.15.0 / Python 3.13，`npm run verify` 通过：
 安装缓存的服务端和技能与源码一致，已安装文件的冒烟测试通过。重启后
 `human_input_status` 返回 0.3.0，并报告 form elicitation 支持；本机试用反馈验证正常。
 长时间等待、系统通知及 macOS/Linux 安装尚无单独验收记录。
+
+## 0.4.0
+
+Windows Codex 桌面端的单选卡在提交前保持挂起 74.8 秒，同一次 MCP 调用返回所选项和补充文字。发布构建通过类型检查、单元测试、打包后的 stdio 测试和安装器测试。四个 Playwright 表单用例使用本机 Chrome 通过。

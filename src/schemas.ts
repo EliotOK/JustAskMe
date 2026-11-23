@@ -55,7 +55,7 @@ export const askChoiceInputSchema = {
     .boolean()
     .optional()
     .describe(
-      'Defaults to true, adding a clickable custom-reply option. Set false to omit it. Selecting the custom option opens a second text form within the same synchronous tool call.'
+      'Defaults to true. Show a text field alongside the options for a standalone reply or an additional comment. Set false to require a preset option.'
     ),
   timeout_ms: timeoutField
 };

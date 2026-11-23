@@ -1,6 +1,6 @@
 {
   "name": "just-ask-me",
-  "version": "0.3.0+codex.20260928181923",
+  "version": "0.4.0",
   "description": "\u8ba9 Codex \u5728\u786e\u5b9e\u9700\u8981\u63d0\u95ee\u65f6\u81ea\u52a8\u4f7f\u7528\u7ed3\u6784\u5316\u5361\u7247\uff0c\u5e76\u63d0\u4f9b\u53ef\u9009\u7684 discuss-with-me \u8ba8\u8bba\u6a21\u5f0f\u3002",
   "author": {
     "name": "EliotOK",
@@ -29,7 +29,8 @@
     ],
     "defaultPrompt": [
       "\u9700\u8981\u5411\u6211\u63d0\u95ee\u65f6\uff0c\u7528\u4e92\u52a8\u5361\u7247\u800c\u4e0d\u662f\u666e\u901a\u6587\u5b57",
-      "\u7528 $discuss-with-me \u8fb9\u505a\u8fb9\u786e\u8ba4\u5173\u952e\u9009\u62e9"
+      "\u7528 $discuss-with-me \u8fb9\u505a\u8fb9\u786e\u8ba4\u5173\u952e\u9009\u62e9",
+      "\u68c0\u67e5 JustAskMe \u66f4\u65b0"
     ],
     "brandColor": "#7C5CFF"
   }

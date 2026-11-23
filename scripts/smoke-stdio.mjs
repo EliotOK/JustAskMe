@@ -100,8 +100,8 @@ async function main() {
   try {
     const { tools } = await capable.listTools();
     check(
-      'server advertises the five tools',
-      tools.length === 5,
+      'server advertises the six tools',
+      tools.length === 6 && tools.some(tool => tool.name === 'check_for_updates'),
       tools.map(tool => tool.name).join(', ')
     );
 

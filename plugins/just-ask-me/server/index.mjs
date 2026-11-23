@@ -36517,7 +36517,7 @@ var EMPTY_COMPLETION_RESULT = {
 
 // src/config.ts
 var SERVER_NAME = "just-ask-me";
-var SERVER_VERSION = "0.3.0";
+var SERVER_VERSION = "0.4.0";
 var DEFAULT_CONFIG = {
   timeoutMs: 3e5,
   fallback: "return",
@@ -36655,75 +36655,38 @@ function optionBlock(options) {
 function isChinese(question) {
   return /[\u3400-\u9fff]/u.test(question);
 }
-function customChoiceLabel(question) {
-  const base = isChinese(question.question) ? "\u81EA\u5B9A\u4E49\u56DE\u7B54" : "Custom reply";
-  const labels = new Set(question.options.map((option) => option.label.trim().toLowerCase()));
-  let label = base;
-  for (let suffix = 2; labels.has(label.toLowerCase()); suffix += 1) {
-    label = `${base} (${suffix})`;
-  }
-  return label;
-}
-function buildCustomReplyRequest(question) {
-  const chinese = isChinese(question.question);
-  return {
-    message: [
-      question.question,
-      "",
-      chinese ? "\u539F\u9009\u9879\uFF1A" : "Original options:",
-      optionBlock(question.options),
-      "",
-      chinese ? "\u8BF7\u586B\u5199\u81EA\u5B9A\u4E49\u56DE\u7B54\u6216\u95EE\u9898\u3002" : "Enter your custom reply or question."
-    ].join("\n"),
-    requestedSchema: asRequestedSchema({
-      type: "object",
-      properties: {
-        free_text: {
-          type: "string",
-          title: chinese ? "\u81EA\u5B9A\u4E49\u56DE\u7B54" : "Custom reply",
-          description: chinese ? "\u586B\u5199\u4F60\u7684\u56DE\u7B54\u6216\u95EE\u9898\u3002" : "Enter your reply or question.",
-          minLength: 1
-        }
-      },
-      required: ["free_text"]
-    })
-  };
-}
 function buildFormRequest(question, multiSelectMode) {
   switch (question.kind) {
     case "choice": {
       const labels = question.options.map((option) => option.label);
       const chinese = isChinese(question.question);
-      const customLabel = question.allowFreeText ? customChoiceLabel(question) : null;
-      if (customLabel) labels.push(customLabel);
-      const listedOptions = customLabel ? [...question.options, { label: customLabel }] : question.options;
-      const lines = [
-        question.question,
-        "",
-        chinese ? "\u9009\u9879\uFF1A" : "Options:",
-        optionBlock(listedOptions),
-        "",
-        customLabel ? chinese ? "\u9009\u62E9\u201C\u81EA\u5B9A\u4E49\u56DE\u7B54\u201D\u540E\u586B\u5199\u6587\u5B57\u3002" : "Select the custom option to enter text." : chinese ? "\u8BF7\u9009\u62E9\u4E00\u9879\u3002" : "Choose exactly one option."
-      ];
+      const lines = [question.question, "", optionBlock(question.options)];
       if (question.defaultValue !== void 0) {
         lines.push(`${chinese ? "\u9ED8\u8BA4\uFF1A" : "Default: "}${question.defaultValue}`);
       }
       const choiceProperty = {
         type: "string",
         title: chinese ? "\u4F60\u7684\u9009\u62E9" : "Your choice",
-        description: question.question,
         enum: labels,
         enumNames: labels
       };
       if (question.defaultValue !== void 0) {
         choiceProperty["default"] = question.defaultValue;
       }
+      const properties = { choice: choiceProperty };
+      if (question.allowFreeText) {
+        properties["free_text"] = {
+          type: "string",
+          title: chinese ? "\u4F60\u7684\u56DE\u7B54\u6216\u8865\u5145" : "Your answer or comment",
+          description: chinese ? "\u53EF\u76F4\u63A5\u56DE\u7B54\uFF0C\u4E5F\u53EF\u7ED9\u6240\u9009\u9879\u8865\u4E00\u53E5\u3002" : "Reply in your own words or add a note to your selection."
+        };
+      }
       return {
         message: lines.join("\n"),
         requestedSchema: asRequestedSchema({
           type: "object",
-          properties: { choice: choiceProperty },
-          required: ["choice"]
+          properties,
+          required: question.allowFreeText ? [] : ["choice"]
         })
       };
     }
@@ -37233,6 +37196,50 @@ async function serveForm(question, multiSelectMode, options) {
   return settled;
 }
 
+// src/update.ts
+var repository = "https://github.com/EliotOK/JustAskMe";
+var releaseApi = "https://api.github.com/repos/EliotOK/JustAskMe/releases/latest";
+var stableRelease = external_exports.object({
+  tag_name: external_exports.string(),
+  draft: external_exports.literal(false).optional(),
+  prerelease: external_exports.literal(false).optional()
+});
+function stableVersion(tag) {
+  if (!/^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(tag)) {
+    throw new Error("Expected a stable major.minor.patch release tag.");
+  }
+  const parts = tag.replace(/^v/, "").split(".").map(Number);
+  if (!parts.every(Number.isSafeInteger)) throw new Error("Invalid release number.");
+  return parts;
+}
+async function checkForUpdates(request = fetch) {
+  const current = { installed_version: SERVER_VERSION };
+  try {
+    const response = await request(releaseApi, {
+      headers: { Accept: "application/vnd.github+json", "User-Agent": "JustAskMe/" + SERVER_VERSION },
+      signal: AbortSignal.timeout(8e3)
+    });
+    if (!response.ok) throw new Error("GitHub returned HTTP " + response.status);
+    const release = stableRelease.safeParse(await response.json());
+    if (!release.success) {
+      throw new Error("GitHub did not return a stable release.");
+    }
+    const tag = release.data.tag_name;
+    const remote = stableVersion(tag);
+    const local = stableVersion(SERVER_VERSION);
+    const difference = remote.map((part, index) => part - local[index]).find((delta) => delta !== 0) ?? 0;
+    const status = difference > 0 ? "update_available" : difference < 0 ? "installed_ahead" : "up_to_date";
+    return { ...current, status, latest_version: remote.join("."), release_url: repository + "/releases/tag/" + tag };
+  } catch (error62) {
+    return {
+      ...current,
+      status: "check_failed",
+      release_url: repository + "/releases/latest",
+      error: error62 instanceof Error ? error62.message : String(error62)
+    };
+  }
+}
+
 // src/outcome.ts
 function emptyResult(tool, question, fallback) {
   return {
@@ -37271,7 +37278,7 @@ var askChoiceInputSchema = {
   ),
   default: external_exports.string().max(200).optional().describe("Optional label of the recommended option. Must exactly match one of the provided labels."),
   allow_free_text: external_exports.boolean().optional().describe(
-    "Defaults to true, adding a clickable custom-reply option. Set false to omit it. Selecting the custom option opens a second text form within the same synchronous tool call."
+    "Defaults to true. Show a text field alongside the options for a standalone reply or an additional comment. Set false to require a preset option."
   ),
   timeout_ms: timeoutField
 };
@@ -37429,24 +37436,7 @@ async function runQuestion(tool, question, timeoutMs, args) {
   let failure2 = null;
   if (base.client_elicitation) {
     const request = buildFormRequest(question, config2.multiSelectMode);
-    let outcome = await requestFormInput(server, request, { timeoutMs, signal: extra.signal });
-    if (question.kind === "choice" && question.allowFreeText && outcome.ok && outcome.action === "accept" && outcome.content["choice"] === customChoiceLabel(question)) {
-      const remainingMs = timeoutMs - (Date.now() - started);
-      if (remainingMs <= 0) {
-        return withStatus(
-          base,
-          "timeout",
-          "elicitation",
-          started,
-          `No answer after ${timeoutMs}ms; the question timed out.`,
-          "The custom reply was not submitted within the time limit."
-        );
-      }
-      outcome = await requestFormInput(server, buildCustomReplyRequest(question), {
-        timeoutMs: remainingMs,
-        signal: extra.signal
-      });
-    }
+    const outcome = await requestFormInput(server, request, { timeoutMs, signal: extra.signal });
     if (outcome.ok && outcome.action === "accept") {
       const interpreted = interpretContent(question, outcome.content, config2.multiSelectMode);
       if (interpreted.ok) {
@@ -37642,7 +37632,7 @@ function registerTools(server, config2) {
         "Ask the user to choose exactly one of 2-25 options and wait for the answer.",
         "Use this when a decision has a small set of genuinely viable alternatives and the choice changes what you build \u2014 for example an architecture, a library, a naming scheme, or a file layout.",
         "Prefer this over ask_confirm whenever the real answer is a choice rather than yes/no, and over ask_text whenever the reasonable answers can be enumerated.",
-        "A clickable custom option is included by default. Set allow_free_text false to omit it. Selecting the custom option opens a second text form during the same synchronous tool call.",
+        "By default the form accepts a selection, a written reply, or both in one submission. Set allow_free_text false to require a preset option.",
         "Returns a selected option in `answer`/`selected`, or a custom reply in `free_text`."
       ].join(" "),
       inputSchema: askChoiceInputSchema,
@@ -37791,6 +37781,23 @@ function registerTools(server, config2) {
     }
   );
   server.registerTool(
+    "check_for_updates",
+    {
+      title: "Check JustAskMe for updates",
+      description: "When asked, compare the installed JustAskMe version with the latest stable GitHub release and return its link.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }
+    },
+    async () => {
+      const report = await checkForUpdates();
+      return {
+        isError: report.status === "check_failed",
+        structuredContent: report,
+        content: [{ type: "text", text: JSON.stringify(report) }]
+      };
+    }
+  );
+  server.registerTool(
     "human_input_status",
     {
       title: "Report human-input capability status",
@@ -37814,7 +37821,7 @@ function registerTools(server, config2) {
         timeout_ms: config2.timeoutMs,
         multi_select_mode: config2.multiSelectMode,
         auto_reject_threshold_ms: config2.autoRejectThresholdMs,
-        tools: ["ask_choice", "ask_confirm", "ask_text", "ask_multi_select", "human_input_status"]
+        tools: ["ask_choice", "ask_confirm", "ask_text", "ask_multi_select", "human_input_status", "check_for_updates"]
       };
       if (input2.verbose) {
         report["client_capabilities"] = capabilities ?? null;

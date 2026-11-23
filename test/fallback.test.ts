@@ -264,7 +264,8 @@ describe('human_input_status', () => {
         'ask_confirm',
         'ask_text',
         'ask_multi_select',
-        'human_input_status'
+        'human_input_status',
+        'check_for_updates'
       ]);
     } finally {
       await harness.close();

@@ -19,8 +19,8 @@ AGENTS_END = '<!-- just-ask-me:ask-with-card:end -->'
 AGENTS_RULE = f'''{AGENTS_START}
 ## JustAskMe 卡片提问
 
-当你已经判断确实需要向用户提问时，使用 `ask-with-card` 技能，
-通过 `human_input` 的对应 `ask_*` 工具显示互动卡片，而不是发送普通文字问题。
+确实需要互动提问时使用 Codex 原生卡片，原生卡不可用时在聊天中提问。
+只有用户明确要求 MCP 表单时，使用 `ask-with-card` 技能中的同步流程。
 
 这条规则只改变提问的呈现方式，不降低提问门槛，不主动增加问题，也不默认启用讨论模式。
 {AGENTS_END}'''

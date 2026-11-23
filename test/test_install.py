@@ -69,7 +69,7 @@ class InstallTests(unittest.TestCase):
         self.assertIn('# My rules\n\nKeep this.', first)
         self.assertIn('## JustAskMe 卡片提问', first)
         self.assertIn('使用 `ask-with-card` 技能', first)
-        self.assertIn('通过 `human_input` 的对应 `ask_*` 工具', first)
+        self.assertIn('使用 Codex 原生卡片', first)
         self.assertEqual(first.count(installer.AGENTS_START), 1)
         self.install()
         second = agents.read_text(encoding='utf-8')

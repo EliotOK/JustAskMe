@@ -51,77 +51,17 @@ function optionBlock(options: ChoiceOption[]): string {
   return options.map((option, index) => describeOption(index, option)).join('\n');
 }
 
-type ChoiceQuestion = Extract<FormQuestion, { kind: 'choice' }>;
-
 function isChinese(question: string): boolean {
   return /[\u3400-\u9fff]/u.test(question);
 }
 
-/** The custom entry must never be mistaken for one of the caller's options. */
-export function customChoiceLabel(question: ChoiceQuestion): string {
-  const base = isChinese(question.question) ? '自定义回答' : 'Custom reply';
-  const labels = new Set(question.options.map(option => option.label.trim().toLowerCase()));
-  let label = base;
-  for (let suffix = 2; labels.has(label.toLowerCase()); suffix += 1) {
-    label = `${base} (${suffix})`;
-  }
-  return label;
-}
-
-/** Second form shown only after the custom choice is selected. */
-export function buildCustomReplyRequest(question: ChoiceQuestion): FormRequest {
-  const chinese = isChinese(question.question);
-  return {
-    message: [
-      question.question,
-      '',
-      chinese ? '原选项：' : 'Original options:',
-      optionBlock(question.options),
-      '',
-      chinese ? '请填写自定义回答或问题。' : 'Enter your custom reply or question.'
-    ].join('\n'),
-    requestedSchema: asRequestedSchema({
-      type: 'object',
-      properties: {
-        free_text: {
-          type: 'string',
-          title: chinese ? '自定义回答' : 'Custom reply',
-          description: chinese ? '填写你的回答或问题。' : 'Enter your reply or question.',
-          minLength: 1
-        }
-      },
-      required: ['free_text']
-    })
-  };
-}
-
-/**
- * Builds the elicitation request for a question.
- *
- * `enumNames` mirrors `enum`. Free text adds one clickable custom entry; the
- * text field is sent separately only if that entry is selected.
- * Per-option descriptions are inlined into `message`.
- */
+/** Build a single MCP form. Option descriptions are included in its message. */
 export function buildFormRequest(question: FormQuestion, multiSelectMode: MultiSelectMode): FormRequest {
   switch (question.kind) {
     case 'choice': {
       const labels = question.options.map(option => option.label);
       const chinese = isChinese(question.question);
-      const customLabel = question.allowFreeText ? customChoiceLabel(question) : null;
-      if (customLabel) labels.push(customLabel);
-      const listedOptions = customLabel
-        ? [...question.options, { label: customLabel }]
-        : question.options;
-      const lines = [
-        question.question,
-        '',
-        chinese ? '选项：' : 'Options:',
-        optionBlock(listedOptions),
-        '',
-        customLabel
-          ? (chinese ? '选择“自定义回答”后填写文字。' : 'Select the custom option to enter text.')
-          : (chinese ? '请选择一项。' : 'Choose exactly one option.')
-      ];
+      const lines = [question.question, '', optionBlock(question.options)];
       if (question.defaultValue !== undefined) {
         lines.push(`${chinese ? '默认：' : 'Default: '}${question.defaultValue}`);
       }
@@ -129,7 +69,6 @@ export function buildFormRequest(question: FormQuestion, multiSelectMode: MultiS
       const choiceProperty: Record<string, unknown> = {
         type: 'string',
         title: chinese ? '你的选择' : 'Your choice',
-        description: question.question,
         enum: labels,
         enumNames: labels
       };
@@ -137,12 +76,20 @@ export function buildFormRequest(question: FormQuestion, multiSelectMode: MultiS
         choiceProperty['default'] = question.defaultValue;
       }
 
+      const properties: Record<string, unknown> = { choice: choiceProperty };
+      if (question.allowFreeText) {
+        properties['free_text'] = {
+          type: 'string',
+          title: chinese ? '你的回答或补充' : 'Your answer or comment',
+          description: chinese ? '可直接回答，也可给所选项补一句。' : 'Reply in your own words or add a note to your selection.'
+        };
+      }
       return {
         message: lines.join('\n'),
         requestedSchema: asRequestedSchema({
           type: 'object',
-          properties: { choice: choiceProperty },
-          required: ['choice']
+          properties,
+          required: question.allowFreeText ? [] : ['choice']
         })
       };
     }
@@ -266,7 +213,7 @@ function canonicalize(values: string[], options: ChoiceOption[]): string[] {
  * Where that matters depends on the transport, and it is worth being precise:
  *
  *   - Over MCP elicitation, choices are validated against the enum before we
- *     see them. A custom reply arrives in a second, unrestricted text form.
+ *     see them. Custom replies use the separate text field on the same form.
  *   - Over the loopback HTTP fallback there is no Ajv layer, so the raw value
  *     does reach us and is preserved rather than discarded.
  *

@@ -12,7 +12,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { ElicitRequestFormParamsSchema } from '@modelcontextprotocol/sdk/types.js';
-import { buildCustomReplyRequest, buildFormRequest } from '../src/forms.js';
+import { buildFormRequest } from '../src/forms.js';
 import type { FormQuestion } from '../src/outcome.js';
 import { askResultSchema } from '../src/schemas.js';
 import { asAskResult, callTool, startHarness } from './helpers.js';
@@ -73,42 +73,32 @@ function roundTrip(question: FormQuestion, mode: 'array' | 'text' = 'array'): Lo
 }
 
 describe('elicitation schema round-trip', () => {
-  it('ask_choice with free text adds one clickable custom option', () => {
+  it('ask_choice with free text offers an inline reply field', () => {
     const schema = roundTrip(CHOICE);
     assert.equal(schema.type, 'object');
-    assert.deepStrictEqual(schema.required, ['choice']);
+    assert.deepStrictEqual(schema.required, []);
 
     const choice = schema.properties?.['choice'];
     assert.ok(choice, 'choice property is present');
     assert.equal(choice['type'], 'string');
-    assert.deepStrictEqual(choice['enum'], ['pnpm', 'npm', 'Custom reply']);
-    assert.deepStrictEqual(choice['enumNames'], ['pnpm', 'npm', 'Custom reply']);
+    assert.deepStrictEqual(choice['enum'], ['pnpm', 'npm']);
+    assert.deepStrictEqual(choice['enumNames'], ['pnpm', 'npm']);
     assert.equal(choice['default'], 'pnpm');
-    assert.deepStrictEqual(Object.keys(schema.properties ?? {}), ['choice']);
+    assert.deepStrictEqual(Object.keys(schema.properties ?? {}), ['choice', 'free_text']);
   });
 
   it('keeps only caller choices when free text is disabled', () => {
     const schema = roundTrip({ ...CHOICE, allowFreeText: false });
+    assert.deepEqual(schema.required, ['choice']);
     assert.deepStrictEqual(Object.keys(schema.properties ?? {}), ['choice']);
     assert.deepStrictEqual(schema.properties?.['choice']?.['enum'], ['pnpm', 'npm']);
     assert.deepStrictEqual(schema.properties?.['choice']?.['enumNames'], ['pnpm', 'npm']);
   });
 
-  it('the custom reply form survives the SDK parser as one required text field', () => {
-    const request = buildCustomReplyRequest(CHOICE as Extract<FormQuestion, { kind: 'choice' }>);
-    const params = { mode: 'form' as const, ...request };
-    assert.deepStrictEqual(ElicitRequestFormParamsSchema.parse(params), params);
-    const schema = request.requestedSchema as unknown as LooseSchema;
-    assert.deepStrictEqual(Object.keys(schema.properties ?? {}), ['free_text']);
-    assert.deepStrictEqual(schema.required, ['free_text']);
-    assert.equal(schema.properties?.['free_text']?.['type'], 'string');
-    assert.match(request.message, /^Which package manager/);
-    assert.match(request.message, /Original options:/);
-  });
-
-  it('uses a distinct custom label when a caller option has the same name', () => {
+  it('preserves caller option labels including Custom reply', () => {
     const schema = roundTrip({ ...CHOICE, options: [{ label: 'Custom reply' }, { label: 'npm' }] });
-    assert.deepStrictEqual(schema.properties?.['choice']?.['enum'], ['Custom reply', 'npm', 'Custom reply (2)']);
+    assert.deepStrictEqual(schema.properties?.['choice']?.['enum'], ['Custom reply', 'npm']);
+    assert.equal(schema.properties?.['free_text']?.['type'], 'string');
   });
 
   it('ask_confirm survives the SDK parser as a boolean field', () => {
@@ -162,13 +152,13 @@ describe('elicitation schema round-trip', () => {
 });
 
 describe('tool definitions', () => {
-  it('publishes all five tools with JSON Schemas for input and output', async () => {
+  it('publishes all six tools with JSON Schemas for input and output', async () => {
     const harness = await startHarness();
     try {
       const { tools } = await harness.client.listTools();
       assert.deepStrictEqual(
         tools.map(tool => tool.name).sort(),
-        ['ask_choice', 'ask_confirm', 'ask_multi_select', 'ask_text', 'human_input_status']
+        ['ask_choice', 'ask_confirm', 'ask_multi_select', 'ask_text', 'check_for_updates', 'human_input_status']
       );
 
       const choice = tools.find(tool => tool.name === 'ask_choice');

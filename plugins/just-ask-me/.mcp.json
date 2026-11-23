@@ -5,7 +5,8 @@
       "args": [
         "./server/index.mjs"
       ],
-      "cwd": "."
+      "cwd": ".",
+      "tool_timeout_sec": 310
     }
   }
 }

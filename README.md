@@ -41,11 +41,15 @@ cd JustAskMe
 
 1. **重开一个 Codex 任务**（插件在新任务里生效）。
 2. 发送：`调用 human_input_status 工具看看`
-   看到 `client_supports_form_elicitation: true` 和五个工具 → 连接成功。
+   看到 `client_supports_form_elicitation: true` 和六个工具 → 连接成功。
 3. 发送：`遇到需要我决定的地方就弹卡片问我。比如：用 pnpm 还是 npm？`
    Codex 弹出带选项的表单，选一个提交，它拿着答案继续 → 完成。
 
 出问题了？直接翻下面的[常见故障](#常见故障)，绝大多数是一行解法。
+
+## 检查更新
+
+在插件页选择「检查 JustAskMe 更新」，也可以直接在聊天里发这句话。工具 `check_for_updates` 会按需查询 GitHub 最新正式版，显示本机版本、最新版本和发布链接。网络错误会单独报告。
 
 ## 日常怎么用
 
@@ -98,10 +102,11 @@ cd JustAskMe
 
 | 工具 | 输入要点 | 返回 |
 | --- | --- | --- |
-| `ask_choice` | `question` + 2–25 个 `{label, description?}`（2–5 个最佳）；`default` 须精确匹配某 label；默认增加可点击的“自定义回答”，设置 `allow_free_text: false` 可关闭；`timeout_ms` 覆盖整次等待 | 预设选项在 `selected`，自定义回答在 `free_text` |
+| `ask_choice` | `question` + 2–25 个 `{label, description?}`（2–5 个最佳）；`default` 须精确匹配某 label；默认同卡显示可选的文字输入框，设置 `allow_free_text: false` 可关闭；`timeout_ms` 覆盖整次等待 | 预设选项在 `selected`，自定义回答在 `free_text` |
 | `ask_confirm` | `question`（写清对象和后果）；`default?` | `confirmed: boolean`，`answer` 为 `"yes"`/`"no"` |
 | `ask_text` | `question`；`placeholder?` 格式提示；`default?` | `answer`（已 trim） |
 | `ask_multi_select` | `question` + `options`；`min?`/`max?` 数量边界 | `selected: string[]`，`answer` 逗号连接 |
+| `check_for_updates` | 无 | 查询 GitHub 最新正式版并比较本机版本 |
 | `human_input_status` | `verbose?` | 能力/配置诊断，不提问不阻塞 |
 
 ## 给项目仓库加提问纪律（可选）
@@ -226,7 +231,7 @@ MIT。
 
 ## 自由回答与发布验证
 
-`ask_choice` 默认在第一张同步 MCP 卡片增加可点击的“自定义回答”。预设选项直接返回 `answered`；选择“自定义回答”才打开第二张文字输入卡，原题和选项会在卡片中重现，提交后返回 `discussion`。模型应结合完整文字理解回复，
+`ask_choice` 默认在同一张卡片显示选项和文字输入框，可只选、只写或同时提交。只写文字返回 `discussion`，有选项时返回 `answered`。模型应结合完整文字理解回复，
 先处理追问和“暂不执行”等限制，不能把任一提交自动视为操作授权。
 HTTP 备用表单会按多选数量校验；无效提交保留页面和已填内容，修正后可继续提交。
 
